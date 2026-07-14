@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Float, ForeignKey, DateTime, Text, func
+from sqlalchemy import Column, String, Float, ForeignKey, DateTime, Text, Boolean, func
 from sqlalchemy.orm import relationship
 from app.models.base import Base
 
@@ -14,6 +14,7 @@ class RiskEvent(Base):
     severity = Column(String(50), nullable=False)
     jurisdiction_factor = Column(Float, default=1.0, nullable=False)
     score_after = Column(Float, default=0.0, nullable=False)
+    indirect = Column(Boolean, default=False, nullable=False)
     event_category = Column(String(100), nullable=True)
     reasoning = Column(Text, nullable=True)
     created_at = Column(DateTime, default=func.now(), nullable=False)
