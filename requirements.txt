@@ -11,3 +11,9 @@ python-multipart
 jinja2
 httpx
 redis
+
+# Dev 4 - ingestion/data-prep (Sprint 2)
+pandas>=2.2
+pyarrow>=17.0
+rapidfuzz>=3.10
+APScheduler>=3.10
