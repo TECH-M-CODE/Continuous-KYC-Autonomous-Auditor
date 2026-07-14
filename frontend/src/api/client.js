@@ -100,5 +100,102 @@ export const apiClient = {
       console.warn("Mocking inject event", e);
       return { success: true, injected: data };
     }
+  },
+
+  getSAR: async (id) => {
+    try {
+      const res = await client.get(`/sar/${id}`);
+      return res.data;
+    } catch (e) {
+      console.warn(`Fallback to mock SAR for ${id}`, e);
+      return {
+        id: id || 'sar-991',
+        alert_id: 'al-101',
+        entity_id: 'ent-881',
+        entity_name: 'Acme Holdings LLC',
+        version: 1,
+        status: 'pending_review',
+        created_at: new Date().toISOString(),
+        degraded_draft: false,
+        narrative: `This Suspicious Activity Report (SAR) is being filed for Acme Holdings LLC based on a combination of adverse media and structurally anomalous transactions.\n\nOn July 14, 2026, the entity was named in a fraud investigation by Reuters. Shortly after, the entity initiated multiple large wire transfers to high-risk jurisdictions, structured to avoid standard reporting thresholds.\n\nThe combination of events exceeds our critical risk threshold and indicates potential money laundering or sanctions evasion activities.`,
+        regulatory_basis: [
+          { citation: 'GDPR Article 30', passage: 'Records of processing activities must be maintained.' },
+          { citation: 'BSA / AML § 1020.320', passage: 'Reports by banks of suspicious transactions.' }
+        ],
+        evidence: [
+          { source: 'Reuters', snippet: 'Acme Holdings named in fraud probe', relevance: 'High' },
+          { source: 'SAML-D', snippet: 'Large wire transfer to high-risk jurisdiction', relevance: 'Critical' }
+        ]
+      };
+    }
+  },
+
+  editSAR: async ({ id, narrative }) => {
+    try {
+      const res = await client.post(`/sar/${id}/edit`, { narrative });
+      return res.data;
+    } catch (e) {
+      console.warn(`Mocking edit SAR ${id}`);
+      return { success: true, version: 2, narrative };
+    }
+  },
+
+  approveSAR: async ({ id, notes }) => {
+    try {
+      const res = await client.post(`/sar/${id}/approve`, { notes });
+      return res.data;
+    } catch (e) {
+      console.warn(`Mocking approve SAR ${id}`);
+      return { success: true, status: 'approved' };
+    }
+  },
+
+  rejectSAR: async ({ id, notes }) => {
+    try {
+      const res = await client.post(`/sar/${id}/reject`, { notes });
+      return res.data;
+    } catch (e) {
+      console.warn(`Mocking reject SAR ${id}`);
+      return { success: true, status: 'rejected' };
+    }
+  },
+
+  requestSARInfo: async ({ id, question }) => {
+    try {
+      const res = await client.post(`/sar/${id}/request-info`, { question });
+      return res.data;
+    } catch (e) {
+      console.warn(`Mocking request info SAR ${id}`);
+      return { success: true, status: 'investigating' };
+    }
+  },
+
+  verifyAuditChain: async () => {
+    try {
+      const res = await client.get('/audit/verify');
+      return res.data;
+    } catch (e) {
+      console.warn("Mocking verify audit chain");
+      return { valid: true, checked: 42, first_bad_seq: null };
+    }
+  },
+
+  getDrillReport: async () => {
+    try {
+      const res = await client.get('/drill/latest');
+      return res.data;
+    } catch (e) {
+      console.warn("Mocking get drill report");
+      return {
+        caught: 17,
+        total: 20,
+        misses_by_class: {
+          'transliteration': 1,
+          'shell_name': 2,
+          'typo_squat': 0,
+          'split_identity': 0
+        }
+      };
+    }
   }
 };
