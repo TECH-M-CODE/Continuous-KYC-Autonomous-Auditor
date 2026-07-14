@@ -1,8 +1,22 @@
-"""SSE streaming router (docs/api_contract.md #7).
+"""SSE streaming router — Sprint 3: real broker fan-out replacing canned demo loop.
 
-Sprint 1 emits a canned demo sequence in lieu of the real IMessageBroker
-(Dev 2's app/infrastructure/broker.py), which isn't wired yet.
+The SSE handler subscribes to ALL topics so the browser tab receives every
+agent-produced event (ALERT_NEW, SAR_READY, ENTITY_UPDATED, SYSTEM_HEALTH,
+ALERT_UPDATED, POLICY_RELOADED) over a single connection.
+
+Connection lifecycle:
+1. Client connects → handler subscribes to every topic via ``broker.subscription()``.
+2. Handler yields one SSE message per broker message.
+3. Client disconnects → subscription context-manager cleans up automatically.
+
+The ``HEARTBEAT_INTERVAL_SECONDS`` timeout on ``asyncio.wait_for`` prevents
+the generator from stalling forever when no events arrive — it yields a
+comment-line heartbeat instead, keeping the HTTP connection alive through
+proxies that close idle connections.
 """
+
+from __future__ import annotations
+
 import asyncio
 import json
 from typing import AsyncIterator
@@ -10,50 +24,32 @@ from typing import AsyncIterator
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
-from app.schemas.events import SSEEvent
+from app.infrastructure.broker import broker
 
 router = APIRouter(tags=["events"])
 
-_DEMO_EVENTS: list[SSEEvent] = [
-    SSEEvent(
-        event="alert.new",
-        data={
-            "id": "alert-1",
-            "entity_id": "entity-1",
-            "priority": "CRITICAL",
-            "title": "New CRITICAL alert: Acme Import Export Ltd",
-        },
-    ),
-    SSEEvent(
-        event="risk.updated",
-        data={"entity_id": "entity-1", "score_after": 78.5, "band_after": "HIGH"},
-    ),
-    SSEEvent(
-        event="sar.ready",
-        data={"sar_id": "sar-1", "entity_name": "Acme Import Export Ltd", "priority": "CRITICAL"},
-    ),
-]
-
-_DEMO_EVENT_INTERVAL_SECONDS = 4
 _HEARTBEAT_INTERVAL_SECONDS = 15
 
 
-def _format_sse(event: SSEEvent) -> str:
-    return f"event: {event.event}\ndata: {json.dumps(event.data)}\n\n"
+def _format_sse(topic: str, payload) -> str:
+    return f"event: {topic}\ndata: {json.dumps(payload, default=str)}\n\n"
 
 
 async def _event_generator(request: Request) -> AsyncIterator[str]:
-    for demo_event in _DEMO_EVENTS:
-        if await request.is_disconnected():
-            return
-        yield _format_sse(demo_event)
-        await asyncio.sleep(_DEMO_EVENT_INTERVAL_SECONDS)
+    """Async generator: yields SSE frames from the broker until client disconnects."""
+    with broker.subscription() as queue:   # subscribe to ALL topics
+        while True:
+            if await request.is_disconnected():
+                return
 
-    while True:
-        if await request.is_disconnected():
-            return
-        yield ": heartbeat\n\n"
-        await asyncio.sleep(_HEARTBEAT_INTERVAL_SECONDS)
+            try:
+                message = await asyncio.wait_for(queue.get(), timeout=_HEARTBEAT_INTERVAL_SECONDS)
+                yield _format_sse(message.topic, message.payload)
+            except asyncio.TimeoutError:
+                # No events in the last N seconds — emit heartbeat to keep connection alive
+                yield ": heartbeat\n\n"
+            except asyncio.CancelledError:
+                return
 
 
 @router.get("/stream")
@@ -61,5 +57,9 @@ async def stream_events(request: Request) -> StreamingResponse:
     return StreamingResponse(
         _event_generator(request),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
