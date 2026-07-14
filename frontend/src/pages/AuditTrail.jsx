@@ -1,24 +1,14 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { History, ShieldCheck, Check, Loader2 } from 'lucide-react';
+import { History, Loader2 } from 'lucide-react';
 import { apiClient } from '../api/client';
+import { ChainVerifyBadge } from '../components/ChainVerifyBadge';
 
 export const AuditTrail = () => {
-  const [verifying, setVerifying] = useState(false);
-  const [verified, setVerified] = useState(false);
-
   const { data: auditLogs = [], isLoading } = useQuery({
     queryKey: ['audit'],
     queryFn: apiClient.getAudit
   });
-
-  const handleVerify = () => {
-    setVerifying(true);
-    setTimeout(() => {
-      setVerifying(false);
-      setVerified(true);
-    }, 1500);
-  };
 
   return (
     <div className="flex flex-col h-full space-y-6 max-w-5xl mx-auto w-full">
@@ -31,21 +21,7 @@ export const AuditTrail = () => {
           <p className="text-sm text-slate-400 mt-1">Cryptographically verifiable sequence of system actions.</p>
         </div>
         
-        <button 
-          onClick={handleVerify}
-          disabled={verifying || verified}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            verified 
-              ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
-              : 'bg-brand-600 text-white hover:bg-brand-500'
-          }`}
-        >
-          {verified ? (
-            <><Check className="w-4 h-4" /> Chain Verified</>
-          ) : (
-            <><ShieldCheck className={`w-4 h-4 ${verifying ? 'animate-pulse' : ''}`} /> {verifying ? 'Verifying...' : 'Verify Hash Chain'}</>
-          )}
-        </button>
+        <ChainVerifyBadge />
       </div>
 
       <div className="bg-slate-900 border border-slate-800 rounded-xl flex-1 overflow-hidden flex flex-col">
