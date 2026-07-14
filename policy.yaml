@@ -1,0 +1,14 @@
+weights:
+  pep_flag: 15
+  fatf_country_flag: 10
+  transaction_anomaly: 20
+  adverse_media: 12
+  sanctions_hit: 40
+sector_risk:
+  Low: 0
+  Medium: 5
+  High: 12
+bands:
+  medium: 40
+  high: 60
+  critical: 80

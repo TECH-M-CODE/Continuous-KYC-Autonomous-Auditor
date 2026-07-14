@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """FastAPI application entrypoint: app factory, middleware, and router registration."""
 import uuid
 from contextlib import asynccontextmanager
@@ -22,16 +23,30 @@ app = FastAPI(
     docs_url=f"{settings.api_v1_prefix}/docs",
     openapi_url=f"{settings.api_v1_prefix}/openapi.json",
     lifespan=lifespan,
+=======
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(
+    title="SentinelAI API",
+    description="SentinelAI Continuous KYC Autonomous Auditor API",
+    version="1.0.0"
+>>>>>>> 66632a0777426df4be40828afe8348ad78c2660d
 )
 
 app.add_middleware(
     CORSMiddleware,
+<<<<<<< HEAD
     allow_origins=settings.cors_origins,
+=======
+    allow_origins=["*"],
+>>>>>>> 66632a0777426df4be40828afe8348ad78c2660d
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+<<<<<<< HEAD
 
 @app.middleware("http")
 async def attach_trace_id(request: Request, call_next):
@@ -64,3 +79,22 @@ app.include_router(sar.router, prefix=settings.api_v1_prefix)
 app.include_router(audit.router, prefix=settings.api_v1_prefix)
 app.include_router(watchlist.router, prefix=settings.api_v1_prefix)
 app.include_router(sse.router, prefix=settings.api_v1_prefix)
+=======
+@app.get("/health")
+@app.get("/api/v1/health")
+async def health():
+    return {
+        "success": True,
+        "message": "SentinelAI API is healthy",
+        "data": {
+            "status": "healthy",
+            "db_connected": True
+        }
+    }
+
+@app.get("/")
+async def root():
+    return {
+        "message": "Welcome to SentinelAI Continuous KYC Auditor API"
+    }
+>>>>>>> 66632a0777426df4be40828afe8348ad78c2660d

@@ -1,4 +1,17 @@
+<<<<<<< HEAD
 fastapi>=0.115
 uvicorn[standard]>=0.32
 pydantic>=2.9
 pydantic-settings>=2.6
+=======
+SQLAlchemy>=2.0.0
+aiosqlite
+PyYAML
+fastapi>=0.100.0
+uvicorn>=0.20.0
+pydantic>=2.0.0
+python-multipart
+jinja2
+httpx
+redis
+>>>>>>> 66632a0777426df4be40828afe8348ad78c2660d
