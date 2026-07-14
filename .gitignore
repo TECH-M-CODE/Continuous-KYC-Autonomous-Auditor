@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Local databases (sqlite files are binary and merge-unfriendly -- regenerate
+# locally via data/seed/seed_entities.py + data/prep/*.py instead of committing)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite3
+
+# Vector store persistence (regenerable via knowledge/*.py)
+data/chroma/
+
+# Generated data-prep artifacts (regenerable via data/prep/*.py)
+data/processed/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs
+*.log
