@@ -1,22 +1,34 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useToast } from '../components/ToastContext';
 
 export const useSSE = (url = '/api/stream') => {
-  const [connected, setConnected] = useState(false);
+  const [connectionState, setConnectionState] = useState('disconnected'); // 'connected', 'connecting', 'disconnected'
   const [lastEvent, setLastEvent] = useState(null);
   const [events, setEvents] = useState([]);
   const eventSourceRef = useRef(null);
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
 
   useEffect(() => {
+    setConnectionState('connecting');
     const sse = new EventSource(url);
     eventSourceRef.current = sse;
 
-    sse.onopen = () => setConnected(true);
+    sse.onopen = () => {
+      setConnectionState((prev) => {
+        if (prev === 'connecting' || prev === 'disconnected') {
+          // Reconnect happened, blanket invalidate to ensure fresh data
+          queryClient.invalidateQueries();
+        }
+        return 'connected';
+      });
+    };
     
     sse.onerror = (err) => {
       console.error('SSE Error:', err);
-      setConnected(false);
+      // EventSource tries to reconnect automatically
+      setConnectionState('connecting');
     };
 
     const handleEvent = (type) => (e) => {
@@ -35,6 +47,14 @@ export const useSSE = (url = '/api/stream') => {
         }
         if (type === 'sar.ready') {
           queryClient.invalidateQueries({ queryKey: ['sar'] });
+          addToast({
+            type: 'sar',
+            title: 'SAR Draft Ready',
+            message: `A new SAR draft is ready for review.`,
+            actionText: 'Review now',
+            actionLink: '/sar', // Assuming there's only one page for now, or route to specific SAR
+            duration: 10000
+          });
         }
         
       } catch (err) {
@@ -55,8 +75,10 @@ export const useSSE = (url = '/api/stream') => {
     return () => {
       sse.close();
       eventSourceRef.current = null;
+      setConnectionState('disconnected');
     };
-  }, [url, queryClient]);
+  }, [url, queryClient, addToast]);
 
-  return { connected, lastEvent, events };
+  return { connectionState, connected: connectionState === 'connected', lastEvent, events };
 };
+

@@ -14,7 +14,7 @@ import {
 import clsx from 'clsx';
 
 export const Layout = () => {
-  const { connected } = useSSE(); // Hook into SSE to show status dot
+  const { connected, connectionState } = useSSE(); // Hook into SSE to show status dot
 
   const navItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
@@ -82,15 +82,18 @@ export const Layout = () => {
               <span className="relative flex h-2.5 w-2.5">
                 <span className={clsx(
                   "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
-                  connected ? "bg-green-400" : "bg-red-400"
+                  connectionState === 'connected' ? "bg-green-400" : 
+                  connectionState === 'connecting' ? "bg-yellow-400" : "bg-red-400"
                 )}></span>
                 <span className={clsx(
                   "relative inline-flex rounded-full h-2.5 w-2.5",
-                  connected ? "bg-green-500" : "bg-red-500"
+                  connectionState === 'connected' ? "bg-green-500" : 
+                  connectionState === 'connecting' ? "bg-yellow-500" : "bg-red-500"
                 )}></span>
               </span>
               <span className="text-xs font-medium text-slate-300">
-                {connected ? 'Live' : 'Disconnected'}
+                {connectionState === 'connected' ? 'Live' : 
+                 connectionState === 'connecting' ? 'Reconnecting...' : 'Disconnected'}
               </span>
             </div>
             
@@ -108,3 +111,4 @@ export const Layout = () => {
     </div>
   );
 };
+
