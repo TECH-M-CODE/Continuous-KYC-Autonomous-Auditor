@@ -1,10 +1,15 @@
-"""Alerts router: Sprint 1 returns hardcoded data matching docs/api_contract.md #3."""
+"""Alerts router — Sprint 3: real DB reads replacing the Sprint 1 mock store."""
+
+from __future__ import annotations
+
+import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 
 from app.api.deps import PaginationParams, pagination_params
+from app.repositories.unit_of_work import UnitOfWork
 from app.schemas import APIResponse, PaginatedData, paginate, success_response
 from app.schemas.alerts import (
     AlertActionRequest,
@@ -13,81 +18,11 @@ from app.schemas.alerts import (
     EvidenceItemDTO,
     InvestigationDTO,
 )
+from app.schemas.traces import DecisionTrace
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
-# Internal mock records carry fields (entity_id, assigned_to) not exposed on the DTOs.
-_MOCK_ALERTS: dict[str, dict] = {
-    "alert-1": {
-        "id": "alert-1",
-        "entity_id": "entity-1",
-        "entity_name": "Acme Import Export Ltd",
-        "priority": "CRITICAL",
-        "status": "OPEN",
-        "assigned_to": None,
-        "created_at": "2026-07-12T14:05:00Z",
-        "investigation": InvestigationDTO(
-            summary="Director confirmed as PEP following adverse media review; sanctions exposure suspected.",
-            evidence=[
-                EvidenceItemDTO(
-                    source="Reuters",
-                    snippet="Viktor Petrov named in ongoing investigation into shell company networks.",
-                    url="https://example.com/news/petrov-investigation",
-                    relevance=0.92,
-                ),
-                EvidenceItemDTO(
-                    source="OpenSanctions",
-                    snippet="Fuzzy match (0.88) against EU sanctions PEP list entry 'Petrov, V.'",
-                    url=None,
-                    relevance=0.88,
-                ),
-            ],
-        ),
-    },
-    "alert-2": {
-        "id": "alert-2",
-        "entity_id": "entity-2",
-        "entity_name": "Globex Trading Co",
-        "priority": "LOW",
-        "status": "RESOLVED",
-        "assigned_to": "user-analyst-1",
-        "created_at": "2026-07-05T08:00:00Z",
-        "investigation": InvestigationDTO(
-            summary="Minor name similarity to a delisted watchlist entry; confirmed false positive.",
-            evidence=[
-                EvidenceItemDTO(
-                    source="OFAC SDN",
-                    snippet="Delisted entry 'Globex Trading' (removed 2019) shares partial name match.",
-                    url=None,
-                    relevance=0.31,
-                )
-            ],
-        ),
-    },
-    "alert-3": {
-        "id": "alert-3",
-        "entity_id": "entity-3",
-        "entity_name": "Elena Kowalski",
-        "priority": "MEDIUM",
-        "status": "IN_PROGRESS",
-        "assigned_to": "user-analyst-2",
-        "created_at": "2026-07-13T11:20:00Z",
-        "investigation": InvestigationDTO(
-            summary="Transaction velocity spike under review; no adverse media found yet.",
-            evidence=[
-                EvidenceItemDTO(
-                    source="Internal Transaction Monitor",
-                    snippet="6 cross-border transfers within 24h, 3x above entity baseline.",
-                    url=None,
-                    relevance=0.75,
-                )
-            ],
-        ),
-    },
-}
-
 _ACTION_TO_STATUS = {"DISMISS": "DISMISSED", "ESCALATE": "ESCALATED", "RESOLVE": "RESOLVED"}
-_ACTION_PAST_TENSE = {"DISMISS": "dismissed", "ESCALATE": "escalated", "RESOLVE": "resolved"}
 
 
 def _not_found(request: Request, alert_id: str) -> JSONResponse:
@@ -104,24 +39,58 @@ def _not_found(request: Request, alert_id: str) -> JSONResponse:
     )
 
 
-def _to_detail(record: dict) -> AlertDetailDTO:
-    return AlertDetailDTO(
-        id=record["id"],
-        entity_name=record["entity_name"],
-        priority=record["priority"],
-        status=record["status"],
-        created_at=record["created_at"],
-        investigation=record["investigation"],
+def _parse_trace(trace_json: str | None) -> Optional[DecisionTrace]:
+    """Deserialise the stored DecisionTrace JSON, returning None on any error."""
+    if not trace_json:
+        return None
+    try:
+        return DecisionTrace.model_validate_json(trace_json)
+    except Exception:
+        return None
+
+
+def _alert_to_summary(alert, entity_name: str) -> AlertSummaryDTO:
+    return AlertSummaryDTO(
+        id=alert.id,
+        entity_name=entity_name,
+        priority=alert.priority.upper(),
+        status=alert.status.upper(),
+        created_at=alert.created_at,
     )
 
 
-def _to_summary(record: dict) -> AlertSummaryDTO:
-    return AlertSummaryDTO(
-        id=record["id"],
-        entity_name=record["entity_name"],
-        priority=record["priority"],
-        status=record["status"],
-        created_at=record["created_at"],
+def _alert_to_detail(alert, entity_name: str) -> AlertDetailDTO:
+    # Build an InvestigationDTO from the stored DecisionTrace (best-effort)
+    trace = _parse_trace(alert.trace)
+    if trace:
+        summary_text = (
+            f"Automated investigation: {trace.final_outcome.replace('_', ' ').title()}. "
+            f"Trace contains {len(trace.nodes)} decision nodes."
+        )
+        evidence = [
+            EvidenceItemDTO(
+                source=node.values.get("source", "AI Agent"),
+                snippet=node.detail,
+                url=node.values.get("source_url"),
+                relevance=min(1.0, float(node.values.get("top_score", node.values.get("confidence", 0.75)) or 0) / 100.0
+                            if node.values.get("top_score") is not None
+                            else float(node.values.get("confidence", 0.75) or 0.75)),
+            )
+            for node in trace.nodes
+            if node.kind in ("screen", "resolve", "classify")
+        ]
+    else:
+        summary_text = "Investigation data not yet available."
+        evidence = []
+
+    return AlertDetailDTO(
+        id=alert.id,
+        entity_name=entity_name,
+        priority=alert.priority.upper(),
+        status=alert.status.upper(),
+        created_at=alert.created_at,
+        investigation=InvestigationDTO(summary=summary_text, evidence=evidence),
+        trace=trace,
     )
 
 
@@ -132,36 +101,52 @@ async def list_alerts(
     priority: Optional[str] = Query(None),
     assigned_to: Optional[str] = Query(None),
 ) -> APIResponse[PaginatedData[AlertSummaryDTO]]:
-    records = list(_MOCK_ALERTS.values())
+    with UnitOfWork() as uow:
+        alerts = uow.alerts.list(
+            band=None,
+            status=status.upper() if status else None,
+        )
+        # Filter priority in-memory (alert_repo doesn't support it natively)
+        if priority:
+            alerts = [a for a in alerts if a.priority.upper() == priority.upper()]
+        if assigned_to:
+            alerts = [a for a in alerts if a.assigned_to == assigned_to]
 
-    if status:
-        records = [r for r in records if r["status"] == status.upper()]
-    if priority:
-        records = [r for r in records if r["priority"] == priority.upper()]
-    if assigned_to:
-        records = [r for r in records if r["assigned_to"] == assigned_to]
+        # Resolve entity names
+        summaries: list[AlertSummaryDTO] = []
+        for a in alerts:
+            entity = uow.entities.get(a.entity_id)
+            name = entity.name if entity else a.entity_id
+            summaries.append(_alert_to_summary(a, name))
 
-    total = len(records)
+    total = len(summaries)
     start = (pagination.page - 1) * pagination.limit
-    page_items = records[start : start + pagination.limit]
-
-    summaries = [_to_summary(r) for r in page_items]
-    return success_response(paginate(summaries, total=total, page=pagination.page, page_size=pagination.limit))
+    page_items = summaries[start: start + pagination.limit]
+    return success_response(paginate(page_items, total=total, page=pagination.page, page_size=pagination.limit))
 
 
 @router.get("/{alert_id}", response_model=APIResponse[AlertDetailDTO])
 async def get_alert(alert_id: str, request: Request):
-    record = _MOCK_ALERTS.get(alert_id)
-    if record is None:
-        return _not_found(request, alert_id)
-    return success_response(_to_detail(record))
+    with UnitOfWork() as uow:
+        alert = uow.alerts.get(alert_id)
+        if alert is None:
+            return _not_found(request, alert_id)
+        entity = uow.entities.get(alert.entity_id)
+        name = entity.name if entity else alert.entity_id
+        return success_response(_alert_to_detail(alert, name))
 
 
 @router.patch("/{alert_id}/action", response_model=APIResponse[AlertDetailDTO])
 async def act_on_alert(alert_id: str, body: AlertActionRequest, request: Request):
-    record = _MOCK_ALERTS.get(alert_id)
-    if record is None:
-        return _not_found(request, alert_id)
-
-    record["status"] = _ACTION_TO_STATUS[body.action]
-    return success_response(_to_detail(record), message=f"Alert {_ACTION_PAST_TENSE[body.action]}.")
+    with UnitOfWork() as uow:
+        alert = uow.alerts.get(alert_id)
+        if alert is None:
+            return _not_found(request, alert_id)
+        alert.status = _ACTION_TO_STATUS[body.action]
+        uow.commit()
+        entity = uow.entities.get(alert.entity_id)
+        name = entity.name if entity else alert.entity_id
+        return success_response(
+            _alert_to_detail(alert, name),
+            message=f"Alert {body.action.lower()}d.",
+        )
