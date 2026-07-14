@@ -8,7 +8,8 @@ import {
   History, 
   ShieldAlert, 
   Settings,
-  Menu
+  Menu,
+  LayoutDashboard
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -16,7 +17,8 @@ export const Layout = () => {
   const { connected } = useSSE(); // Hook into SSE to show status dot
 
   const navItems = [
-    { name: 'Alert Queue', path: '/', icon: Bell },
+    { name: 'Dashboard', path: '/', icon: LayoutDashboard },
+    { name: 'Alert Queue', path: '/alerts', icon: Bell },
     { name: 'Entity Timeline', path: '/timeline', icon: Activity },
     { name: 'SAR Review', path: '/sar', icon: FileText },
     { name: 'Audit Trail', path: '/audit', icon: History },
