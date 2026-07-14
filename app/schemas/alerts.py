@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
+from app.schemas.traces import DecisionTrace
 
 AlertPriority = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 AlertStatus = Literal["OPEN", "IN_PROGRESS", "ESCALATED", "RESOLVED", "DISMISSED"]
@@ -30,7 +31,7 @@ class AlertSummaryDTO(BaseModel):
 
 class AlertDetailDTO(AlertSummaryDTO):
     investigation: InvestigationDTO
-
+    trace: Optional[DecisionTrace] = None
 
 class AlertActionRequest(BaseModel):
     action: Literal["DISMISS", "ESCALATE", "RESOLVE"]
