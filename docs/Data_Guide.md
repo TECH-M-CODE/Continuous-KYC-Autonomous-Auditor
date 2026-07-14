@@ -112,6 +112,26 @@ The complete, official text of the **General Data Protection Regulation (GDPR)**
 
 ---
 
+## 7. Synthetic KYC & Transaction Risk Dataset (`kyc_profiles/synthetic_kyc_dataset.csv`)
+
+### 📌 What is this dataset about?
+This dataset contains synthetic corporate client profiles enriched with FATF/OFAC risk indicators, PEP flags, industry sector-based risk, and transaction anomaly signals. It simulates the onboarding KYC profiles of corporate entities.
+*   **The Problem**: Compliance departments need to identify high-risk client profiles based on corporate structure, PEP association, FATF risk of their country of origin, and sector-specific risks.
+*   **The ML/Rule Goal**: Set baseline risk scores for newly onboarded entities using predefined weights and tag high-risk clients for active watchlist monitoring.
+
+### Key Columns:
+*   `client_id` (String): Unique client identifier (e.g., `C_0001`).
+*   `client_name` (String): Synthetic company name.
+*   `client_type` (String): Corporate, Individual, or Financial Institution.
+*   `country` (String): Primary jurisdiction.
+*   `sector` (String): Industry sector (e.g., Real Estate, Finance, Mining, Tech).
+*   `sector_risk` (String): Sector-level risk category (`Low`, `Medium`, `High`).
+*   `pep_flag` (Binary): `1` if a Politically Exposed Person (PEP) is associated; `0` otherwise.
+*   `sanctions_flag` (Binary): `1` if the entity is directly listed on a sanctions list; `0` otherwise.
+*   `fatf_country_flag` (Binary): `1` if country is FATF blacklisted or greylisted; `0` otherwise.
+
+---
+
 ## Loading Cleaned Data in Python (Pandas)
 
 Here is how you can read these cleaned files in Python to begin your analysis:
@@ -135,4 +155,8 @@ print("OpenSanctions targets count:", len(df_sanctions))
 df_ofac = pd.read_csv("/data/sanctions/ofac_sdn_cleaned.csv")
 print("OFAC SDN sample records:")
 print(df_ofac[['name', 'type', 'program']].head(5))
+
+# 5. Read Synthetic KYC Dataset (CSV format)
+df_kyc = pd.read_csv("data/kyc_profiles/synthetic_kyc_dataset.csv")
+print("Synthetic KYC Dataset client count:", len(df_kyc))
 ```
