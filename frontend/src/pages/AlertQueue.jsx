@@ -1,28 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { useSSE } from '../hooks/useSSE';
 import { StatusBadge } from '../components/StatusBadge';
-import { Shield, Check, X, Filter } from 'lucide-react';
-
-const mockAlerts = [
-  { id: 'al-101', entity_id: 'ent-881', entity_name: 'Acme Holdings LLC', band: 'critical', score: 85, velocity: 12, event_type: 'adverse_media_fraud', created_at: new Date(Date.now() - 3600000).toISOString() },
-  { id: 'al-102', entity_id: 'ent-332', entity_name: 'Stark Industries', band: 'high', score: 65, velocity: 5, event_type: 'transaction_anomaly', created_at: new Date(Date.now() - 7200000).toISOString() },
-  { id: 'al-103', entity_id: 'ent-991', entity_name: 'Wayne Enterprises', band: 'medium', score: 45, velocity: 2, event_type: 'sanctions_hit_fuzzy', created_at: new Date(Date.now() - 10800000).toISOString() },
-];
+import { Shield, Check, X, Filter, GitMerge, Loader2 } from 'lucide-react';
+import { apiClient } from '../api/client';
 
 export const AlertQueue = () => {
   const { lastEvent } = useSSE();
-  const [alerts, setAlerts] = useState(mockAlerts);
   const [filter, setFilter] = useState('all');
   const [toast, setToast] = useState(null);
+
+  const { data: alerts = [], isLoading } = useQuery({
+    queryKey: ['alerts'],
+    queryFn: apiClient.getAlerts,
+  });
 
   useEffect(() => {
     if (lastEvent?.type === 'alert.new') {
       const newAlert = lastEvent.data;
-      // Prepend the new alert
-      setAlerts(prev => [newAlert, ...prev]);
-      
-      // Show toast
       setToast(newAlert);
       const timer = setTimeout(() => setToast(null), 5000);
       return () => clearTimeout(timer);
@@ -81,70 +78,83 @@ export const AlertQueue = () => {
 
       {/* Table */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl flex-1 overflow-hidden flex flex-col">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm whitespace-nowrap">
-            <thead className="bg-slate-800/50 text-slate-400">
-              <tr>
-                <th className="px-6 py-4 font-medium">Entity</th>
-                <th className="px-6 py-4 font-medium">Risk Band</th>
-                <th className="px-6 py-4 font-medium">Score</th>
-                <th className="px-6 py-4 font-medium">Event Type</th>
-                <th className="px-6 py-4 font-medium">Time (UTC)</th>
-                <th className="px-6 py-4 font-medium text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/50">
-              <AnimatePresence initial={false}>
-                {filteredAlerts.map(alert => (
-                  <motion.tr 
-                    key={alert.id}
-                    layout
-                    initial={{ opacity: 0, backgroundColor: 'rgba(59, 130, 246, 0.1)' }}
-                    animate={{ opacity: 1, backgroundColor: 'transparent' }}
-                    exit={{ opacity: 0, x: -20 }}
-                    transition={{ duration: 0.3 }}
-                    className="hover:bg-slate-800/20 group"
-                  >
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-slate-200">{alert.entity_name || alert.entity_id}</div>
-                      <div className="text-xs text-slate-500 font-mono mt-0.5">{alert.id}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <StatusBadge band={alert.band} />
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="font-mono text-slate-300">{alert.score}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="text-slate-400">{alert.event_type}</span>
-                    </td>
-                    <td className="px-6 py-4 text-slate-400 text-xs">
-                      {new Date(alert.created_at).toLocaleTimeString()}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button className="p-1.5 text-slate-400 hover:text-green-400 hover:bg-green-400/10 rounded-md transition-colors" title="Dismiss">
-                          <Check className="w-4 h-4" />
-                        </button>
-                        <button className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors" title="Escalate">
-                          <Shield className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </motion.tr>
-                ))}
-              </AnimatePresence>
-              
-              {filteredAlerts.length === 0 && (
+        {isLoading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <Loader2 className="w-8 h-8 text-brand-400 animate-spin" />
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm whitespace-nowrap">
+              <thead className="bg-slate-800/50 text-slate-400">
                 <tr>
-                  <td colSpan="6" className="px-6 py-12 text-center text-slate-500">
-                    No alerts in this queue.
-                  </td>
+                  <th className="px-6 py-4 font-medium">Entity</th>
+                  <th className="px-6 py-4 font-medium">Risk Band</th>
+                  <th className="px-6 py-4 font-medium">Score</th>
+                  <th className="px-6 py-4 font-medium">Event Type</th>
+                  <th className="px-6 py-4 font-medium">Time (UTC)</th>
+                  <th className="px-6 py-4 font-medium text-right">Actions</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-800/50">
+                <AnimatePresence initial={false}>
+                  {filteredAlerts.map(alert => (
+                    <motion.tr 
+                      key={alert.id}
+                      layout
+                      initial={{ opacity: 0, backgroundColor: 'rgba(59, 130, 246, 0.1)' }}
+                      animate={{ opacity: 1, backgroundColor: 'transparent' }}
+                      exit={{ opacity: 0, x: -20 }}
+                      transition={{ duration: 0.3 }}
+                      className="hover:bg-slate-800/20 group"
+                    >
+                      <td className="px-6 py-4">
+                        <div className="font-medium text-slate-200">{alert.entity_name || alert.entity_id}</div>
+                        <div className="text-xs text-slate-500 font-mono mt-0.5">{alert.id}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <StatusBadge band={alert.band} />
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="font-mono text-slate-300">{alert.score}</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-slate-400">{alert.event_type}</span>
+                      </td>
+                      <td className="px-6 py-4 text-slate-400 text-xs">
+                        {new Date(alert.created_at).toLocaleTimeString()}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Link 
+                            to={`/alerts/${alert.id}/trace`}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-slate-800 hover:bg-brand-500/20 text-brand-400 border border-slate-700 hover:border-brand-500/50 rounded-md transition-colors text-xs font-semibold mr-2"
+                          >
+                            <GitMerge className="w-3.5 h-3.5" />
+                            Why?
+                          </Link>
+                          <button className="p-1.5 text-slate-400 hover:text-green-400 hover:bg-green-400/10 rounded-md transition-colors" title="Dismiss">
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors" title="Escalate">
+                            <Shield className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </motion.tr>
+                  ))}
+                </AnimatePresence>
+                
+                {filteredAlerts.length === 0 && (
+                  <tr>
+                    <td colSpan="6" className="px-6 py-12 text-center text-slate-500">
+                      No alerts in this queue.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
