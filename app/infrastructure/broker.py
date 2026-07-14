@@ -40,9 +40,10 @@ ALERT_UPDATED: Final = "alert.updated"
 SAR_READY: Final = "sar.ready"
 ENTITY_UPDATED: Final = "entity.updated"
 SYSTEM_HEALTH: Final = "system.health"
+POLICY_RELOADED: Final = "policy.reloaded"
 
 TOPICS: Final[frozenset[str]] = frozenset(
-    {ALERT_NEW, ALERT_UPDATED, SAR_READY, ENTITY_UPDATED, SYSTEM_HEALTH}
+    {ALERT_NEW, ALERT_UPDATED, SAR_READY, ENTITY_UPDATED, SYSTEM_HEALTH, POLICY_RELOADED}
 )
 
 DEFAULT_QUEUE_MAXSIZE: Final = 100
@@ -290,5 +291,6 @@ __all__ = [
     "SAR_READY",
     "ENTITY_UPDATED",
     "SYSTEM_HEALTH",
+    "POLICY_RELOADED",
     "DEFAULT_QUEUE_MAXSIZE",
 ]
