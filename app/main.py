@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from app.api import admin, alerts, audit, entities, health, sar, sse, watchlist
 from app.api.admin import inject_adapter
+from app.api.pipeline import router as pipeline_router
 from app.config import settings
 from app.services.ingestion.base import AdapterRegistry, build_scheduler, poll_unprocessed_events
 from app.services.ingestion.provided_dataset import ProvidedDatasetAdapter
@@ -32,7 +33,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     scheduler = build_scheduler(registry)
     scheduler.start()
-    loop_b_task = asyncio.create_task(poll_unprocessed_events(handler=None))
+
+    # Sprint 3: wire the real agent pipeline to Loop B
+    from app.agents.supervisor import run_pipeline
+    loop_b_task = asyncio.create_task(poll_unprocessed_events(handler=run_pipeline))
 
     yield
 
@@ -101,3 +105,4 @@ app.include_router(audit.router, prefix=settings.api_v1_prefix)
 app.include_router(watchlist.router, prefix=settings.api_v1_prefix)
 app.include_router(sse.router, prefix=settings.api_v1_prefix)
 app.include_router(admin.router, prefix=settings.api_v1_prefix)
+app.include_router(pipeline_router, prefix=settings.api_v1_prefix)
