@@ -1,0 +1,101 @@
+# ---------------------------------------------------------------------------
+# Dev 2 — Verification Layer policy block.
+# Merge this into the project-wide policy.yaml (Dev 1 owns the loader).
+# Everything tunable lives in one file; no magic numbers in code.
+# ---------------------------------------------------------------------------
+verification:
+
+  # --- credibility.py -------------------------------------------------------
+  credibility:
+    # Static tier table. Tier name -> credibility weight in [0,1].
+    tiers:
+      official_list: 1.0      # OFAC SDN, OpenSanctions, EU/UN consolidated
+      major_wire: 0.9         # Reuters, Bloomberg, AP, AFP, FT, WSJ, regulators
+      regional_press: 0.7     # national/regional outlets
+      aggregator: 0.6         # GDELT / GNews syndication, unattributed
+      blog_unknown_rss: 0.4   # blogs, unknown RSS, forums
+      inject: 0.8             # demo / drill injected events (configurable)
+    default: 0.5              # unknown source -> 0.5 + low_credibility flag
+    low_credibility_threshold: 0.5   # <= this raises the low_credibility flag
+
+    # Domain -> tier. Matched on registrable domain, suffix-aware
+    # (news.reuters.com -> reuters.com).
+    domain_tiers:
+      treasury.gov: official_list
+      ofac.treasury.gov: official_list
+      opensanctions.org: official_list
+      sanctionslist.ofac.treas.gov: official_list
+      europa.eu: official_list
+      un.org: official_list
+      reuters.com: major_wire
+      bloomberg.com: major_wire
+      apnews.com: major_wire
+      afp.com: major_wire
+      ft.com: major_wire
+      wsj.com: major_wire
+      nytimes.com: major_wire
+      bbc.co.uk: major_wire
+      bbc.com: major_wire
+      sec.gov: major_wire
+      fca.org.uk: major_wire
+      rbi.org.in: major_wire
+      thehindu.com: regional_press
+      indianexpress.com: regional_press
+      livemint.com: regional_press
+      economictimes.indiatimes.com: regional_press
+      business-standard.com: regional_press
+      gdeltproject.org: aggregator
+      news.google.com: aggregator
+      medium.com: blog_unknown_rss
+      substack.com: blog_unknown_rss
+      blogspot.com: blog_unknown_rss
+      wordpress.com: blog_unknown_rss
+
+    # Adapter-name -> tier. Applied when the event has no resolvable URL/domain
+    # (e.g. SanctionsListAdapter, InjectAdapter, ProvidedDatasetAdapter).
+    source_tiers:
+      opensanctions: official_list
+      ofac: official_list
+      sanctions_list: official_list
+      provided_dataset: official_list
+      transactions: official_list   # internal ledger = first-party ground truth
+      inject: inject
+      gdelt: aggregator
+      gnews: aggregator
+      rss: blog_unknown_rss
+
+    # Heuristic penalties/bonuses, applied after tier lookup, then clamped 0-1.
+    heuristics:
+      no_author_penalty: 0.05
+      opinion_marker_penalty: 0.10   # "allegedly", "rumoured", "sources say"
+      opinion_markers:
+        - allegedly
+        - rumour
+        - rumor
+        - unconfirmed
+        - sources say
+        - speculation
+      https_bonus: 0.0               # kept as an explicit, tunable no-op
+
+  # --- fact_check.py --------------------------------------------------------
+  corroboration:
+    window_hours: 72              # +/- window around the event timestamp
+    name_match_threshold: 85      # rapidfuzz token_set_ratio on normalized names
+    require_distinct_source: true # same-source repeats never corroborate
+    boosts:                       # distinct corroborating sources -> boost
+      "0": 0.00
+      "1": 0.10
+      "2": 0.20                   # 2+ saturates at 0.20
+    max_boost: 0.20
+    max_candidates: 200           # scan cap per corroboration query
+
+  # --- confidence.py --------------------------------------------------------
+  confidence:
+    match_score_scale: 100.0      # fuzzy scores arrive on 0-100
+    llm_weight: 0.6               # Sprint 3 blend: 0.6*llm + 0.4*deterministic
+    deterministic_weight: 0.4
+    degraded_ceiling: 0.74        # LLM degraded -> can never auto-proceed
+    bands:
+      dismiss_below: 0.40         # < 0.40           -> dismiss
+      proceed_at_or_above: 0.75   # >= 0.75          -> proceed
+                                  # [0.40, 0.75)     -> review
