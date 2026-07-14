@@ -12,3 +12,16 @@ bands:
   medium: 40
   high: 60
   critical: 80
+jurisdiction_factors:
+  FATF: 1.3
+  default: 1.0
+velocity:
+  window_hours: 72
+  multiplier_threshold: 3
+severity_defaults:
+  pep_flag: 1.0
+  fatf_country_flag: 1.0
+  transaction_anomaly: 0.8
+  adverse_media: 0.5
+  sanctions_hit: 1.0
+propagation_factor: 0.35

@@ -33,6 +33,7 @@ class AlertDetailDTO(AlertSummaryDTO):
     investigation: InvestigationDTO
     trace: Optional[DecisionTrace] = None
 
+
 class AlertActionRequest(BaseModel):
     action: Literal["DISMISS", "ESCALATE", "RESOLVE"]
     reasoning: str
