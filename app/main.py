@@ -1,5 +1,6 @@
 """FastAPI application entrypoint: app factory, middleware, and router registration."""
 
+import asyncio
 import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -8,14 +9,39 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import alerts, audit, entities, health, sar, sse, watchlist
+from app.api import admin, alerts, audit, entities, health, sar, sse, watchlist
+from app.api.admin import inject_adapter
 from app.config import settings
+from app.services.ingestion.base import AdapterRegistry, build_scheduler, poll_unprocessed_events
+from app.services.ingestion.provided_dataset import ProvidedDatasetAdapter
+from app.services.ingestion.sanctions_list import SanctionsListAdapter
+from app.services.ingestion.transactions import TransactionReplayAdapter
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # No DB/broker/cache to start up yet in Sprint 1 (API shell, hardcoded data).
+    # Adapters are constructed here (not at module import time) since
+    # TransactionReplayAdapter loads + sorts the sampled parquet in
+    # __init__ -- a real cost that must not happen just from importing
+    # app.main (e.g. during test collection).
+    registry = AdapterRegistry()
+    registry.register(ProvidedDatasetAdapter())
+    registry.register(SanctionsListAdapter())
+    registry.register(TransactionReplayAdapter())
+    registry.register(inject_adapter)  # shared with app.api.admin's route handler
+
+    scheduler = build_scheduler(registry)
+    scheduler.start()
+    loop_b_task = asyncio.create_task(poll_unprocessed_events(handler=None))
+
     yield
+
+    loop_b_task.cancel()
+    try:
+        await loop_b_task
+    except asyncio.CancelledError:
+        pass
+    scheduler.shutdown(wait=False)
 
 
 app = FastAPI(
@@ -74,3 +100,4 @@ app.include_router(sar.router, prefix=settings.api_v1_prefix)
 app.include_router(audit.router, prefix=settings.api_v1_prefix)
 app.include_router(watchlist.router, prefix=settings.api_v1_prefix)
 app.include_router(sse.router, prefix=settings.api_v1_prefix)
+app.include_router(admin.router, prefix=settings.api_v1_prefix)
