@@ -36,6 +36,7 @@ class Alert(Base):
     status = Column(String(50), default="OPEN")
     band = Column(String(50), nullable=False)
     assigned_to = Column(String(100), nullable=True)
+    trace = Column(Text, nullable=True)  # Store serialized DecisionTrace
     created_at = Column(DateTime, default=func.now(), nullable=False)
     resolved_at = Column(DateTime, nullable=True)
 
