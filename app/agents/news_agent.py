@@ -21,8 +21,6 @@ import asyncio
 from typing import Any
 
 from app.agents.state import AuditorState
-from app.infrastructure.llm_gateway import LLMGateway
-from app.infrastructure.nvidia_client import build_client
 from pydantic import BaseModel
 
 log = logging.getLogger(__name__)
@@ -112,6 +110,53 @@ class NewsEnrichment(BaseModel):
     summary: str
     confidence_score: float
 
+def _compute_structured_data(all_results: list[dict], event_raw: dict) -> dict:
+    """Deterministically derive risk-signal hit counts from retrieved articles + event text.
+
+    Replaces the old LLM 'news_enrichment' call, which added 15-30s per event and,
+    in practice, always failed schema validation (its output was never used). This
+    counts keyword signals across the article corpus and the event's own text so the
+    investigator's dynamic scoring has real, reliable inputs with no network hop.
+    """
+    texts = [f"{r.get('title', '')} {r.get('summary', '')}" for r in all_results]
+    texts.append(event_raw.get("text", "") or "")
+    blob = " ".join(texts).lower()
+
+    FRAUD_KW = ("fraud", "launder", "embezzle", "bribery", "corrupt", "scam", "ponzi", "kickback")
+    SANCT_KW = ("sanction", "ofac", "sdn", "blacklist", "designated", "asset freeze")
+    REG_KW = ("regulat", "compliance", "investigation", "probe", "scrutiny", "enforcement", "penalty", "fine")
+
+    fraud_dataset_hits = sum(1 for r in all_results if r.get("source") == "financial_fraud_dataset")
+    fraud_kw_present = any(k in blob for k in FRAUD_KW)
+    sanctions_hits = sum(blob.count(k) for k in SANCT_KW)
+    reg_hits = sum(blob.count(k) for k in REG_KW)
+
+    financial_fraud_hits = fraud_dataset_hits + (1 if fraud_kw_present else 0)
+    adverse_media_hits = len(all_results)
+
+    top_articles = [
+        {"source": r.get("source", ""), "title": r.get("title", ""), "url": r.get("url", "")}
+        for r in all_results[:5]
+    ]
+    entity = event_raw.get("entity_hint") or "the entity"
+    summary = (
+        f"Enrichment for {entity}: {adverse_media_hits} article(s) reviewed across datasets, "
+        f"Reuters, and GDELT; {financial_fraud_hits} fraud signal(s), {sanctions_hits} sanctions "
+        f"mention(s), {reg_hits} regulatory mention(s)."
+    )
+    confidence_score = round(min(0.4 + 0.15 * adverse_media_hits, 0.95), 2)
+
+    return {
+        "adverse_media_hits": adverse_media_hits,
+        "financial_fraud_hits": financial_fraud_hits,
+        "sanctions_hits": sanctions_hits,
+        "regulatory_mentions": reg_hits,
+        "top_articles": top_articles,
+        "summary": summary,
+        "confidence_score": confidence_score,
+    }
+
+
 async def _async_news_agent(state: AuditorState) -> AuditorState:
     event_raw: dict[str, Any] = state.get("event_raw", {})
     tb = state["trace"]
@@ -136,33 +181,17 @@ async def _async_news_agent(state: AuditorState) -> AuditorState:
     
     all_results = ds_results + reuters_results + gdelt_results
     
-    log.info("news_agent: Normalizing articles...")
-    
-    prompt = f"""
-    You are the News Agent. Merge all search results, remove duplicates, normalize the schema, and extract entities.
-    Generate a concise summary, detect the event types, and assign confidence and source reliability scores.
-    Calculate adverse media hits, fraud hits, sanctions hits, and regulatory mentions based on the articles.
-    
-    Articles:
-    {json.dumps(all_results)}
-    """
-    
-    from app.agents.supervisor import get_gateway
-    gateway = get_gateway()
+    log.info("news_agent: Normalizing articles (deterministic)...")
 
-    
-    structured_data = None
-    enriched_text = event_raw.get("text", "")
-    
-    try:
-        result = await gateway.complete(prompt, schema=NewsEnrichment, task_tag="news_enrichment")
-        if result.ok and not result.degraded:
-            structured_data = result.data.model_dump()
-            enriched_text = result.data.summary + "\n\n" + json.dumps(structured_data, indent=2)
-            log.info("news_agent: Successfully structured news using LLM.")
-    except Exception as e:
-        log.error(f"news_agent: Failed to structure news: {e}")
-        
+    # Deterministic enrichment — no LLM on the hot path. See _compute_structured_data.
+    structured_data = _compute_structured_data(all_results, event_raw)
+    enriched_text = structured_data["summary"] + "\n\n" + json.dumps(structured_data, indent=2)
+    log.info(
+        "news_agent: structured deterministically (adverse=%d fraud=%d sanctions=%d reg=%d)",
+        structured_data["adverse_media_hits"], structured_data["financial_fraud_hits"],
+        structured_data["sanctions_hits"], structured_data["regulatory_mentions"],
+    )
+
     source_name = "multi_source_dataset"
     credibility_tier = "high"
     url_status = "live_200"

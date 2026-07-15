@@ -22,10 +22,15 @@ class RawEventRepository:
         return query.all()
 
     def get_unprocessed(self, limit: int = 50) -> List[RawEvent]:
+        # Newest-first: a freshly injected/manual event (occurred_at = now) is
+        # picked up on the very next Loop B tick instead of waiting behind the
+        # entire historical backlog (transaction replay + news backfill carry old
+        # occurred_at timestamps). This is what makes the "Inject" button feel
+        # responsive; the historical backlog still drains, just after live events.
         return (
             self.session.query(RawEvent)
             .filter(RawEvent.processed == False)
-            .order_by(RawEvent.occurred_at.asc())
+            .order_by(RawEvent.occurred_at.desc())
             .limit(limit)
             .all()
         )

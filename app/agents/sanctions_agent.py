@@ -123,13 +123,26 @@ def sanctions_agent(state: AuditorState) -> AuditorState:
         outcome=trace_outcome,
     )
 
-    # ── Route: no matches → screened out ──────────────────────────────────────
+    # ── Route: no direct watchlist match → still investigate (enrichment-only) ──
+    # Design decision: a resolved entity is ALWAYS investigated. A sanctions
+    # match is an enriching signal that boosts the risk score when present, not a
+    # hard gate that terminates the pipeline. When there is no match we forward to
+    # the resolver with an empty match set instead of screening the event out, so
+    # injected/adverse-media events on any monitored entity still produce a risk
+    # event, alert, and SAR downstream.
     if not all_matches:
         state["trace"] = tb
         state["screening_matches"] = []
         state["match_score"] = 0.0
-        state["final_outcome"] = "screened_out"
-        log.info("sanctions_agent: no matches for entity=%s → screened_out", entity_name)
+        state["final_outcome"] = ""
+        state["llm_verdict_confidence"] = None
+        state["llm_degraded"] = False
+        state["confidence"] = 0.0
+        state["band"] = "dismiss"
+        log.info(
+            "sanctions_agent: no matches for entity=%s → forwarding to resolver (enrichment-only)",
+            entity_name,
+        )
         return state
 
     # ── Matches found → forward to resolver ──────────────────────────────────

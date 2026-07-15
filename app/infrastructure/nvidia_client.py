@@ -35,6 +35,11 @@ DEFAULT_NVIDIA_FALLBACK = "meta/llama-3.1-8b-instruct"
 
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
 
+# Per-request wall-clock ceiling. Kept modest so a slow/rate-limited endpoint
+# advances the gateway's degradation ladder quickly rather than blocking the
+# ingestion pipeline. See NvidiaClient.generate for why this matters.
+REQUEST_TIMEOUT_SECONDS = 15.0
+
 _SYSTEM_PROMPT = (
     "You are a compliance AI assistant. "
     "You MUST respond with ONLY valid JSON matching the schema requested. "
@@ -76,9 +81,17 @@ class NvidiaClient:
 
         import asyncio
         from openai import OpenAI
+        # A bounded timeout + no internal retries is load-bearing: without it the
+        # underlying HTTP call can block indefinitely when NVIDIA is slow or rate
+        # limited, which stalls the whole ingestion pipeline (Loop B) because
+        # news_agent calls the gateway synchronously for every event. Failing fast
+        # lets the LLMGateway's degradation ladder do its job (retry -> fallback ->
+        # cache -> degrade to human review) instead of hanging.
         client = OpenAI(
             api_key=self._api_key,
             base_url=NVIDIA_BASE_URL,
+            timeout=REQUEST_TIMEOUT_SECONDS,
+            max_retries=0,
         )
 
         # Run the synchronous client call in a thread to avoid blocking the event loop

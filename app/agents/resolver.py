@@ -46,48 +46,61 @@ def resolver(state: AuditorState, *, gateway) -> AuditorState:
 
     tb = state["trace"]
 
-    # ── LLM call (via degradation ladder) ────────────────────────────────────
-    prompt = build_resolver_prompt(
-        entity_name=state.get("entity_name", "Unknown"),
-        entity_jurisdiction=state.get("entity_jurisdiction"),
-        screening_matches=state.get("screening_matches", []),
-        event_text=state.get("event_raw", {}).get("text", ""),
-        event_source=state.get("event_raw", {}).get("source", "unknown"),
-        news_context=state.get("news_context"),
-    )
+    screening_matches = state.get("screening_matches", [])
 
-    # Run async gateway in sync context. This node runs inside asyncio.to_thread()'s
-    # worker thread (see supervisor.run_pipeline), which has no event loop of its
-    # own -- asyncio.get_event_loop() raises RuntimeError there. asyncio.run()
-    # creates and tears down a fresh loop for this call instead.
-    # Run async gateway in the worker thread's own event loop.
-    # asyncio.to_thread() gives us a thread with no running loop, so
-    # asyncio.run() is the correct call here (creates + runs + closes a loop).
-    result = asyncio.run(
-        gateway.complete(prompt, schema=ResolverVerdict, task_tag="resolver_verdict")
-    )
+    if not screening_matches:
+        # Nothing to adjudicate: with no watchlist candidate, the LLM would be
+        # asked to confirm a match that doesn't exist. Skip the round-trip and
+        # fall through to deterministic verification only. This is the common
+        # enrichment-only path and removes one LLM call from every such event.
+        llm_verdict_confidence = None
+        llm_degraded = False
+        tb.add(
+            kind="resolve",
+            label="No watchlist match — LLM verdict skipped",
+            detail="No sanctions/watchlist candidate to adjudicate; deterministic verification only.",
+            values={"llm_skipped": True, "match_count": 0},
+            outcome="branch",
+        )
+    else:
+        # ── LLM call (via degradation ladder) ────────────────────────────────
+        prompt = build_resolver_prompt(
+            entity_name=state.get("entity_name", "Unknown"),
+            entity_jurisdiction=state.get("entity_jurisdiction"),
+            screening_matches=screening_matches,
+            event_text=state.get("event_raw", {}).get("text", ""),
+            event_source=state.get("event_raw", {}).get("source", "unknown"),
+            news_context=state.get("news_context"),
+        )
 
-    verdict: ResolverVerdict | None = result.data
-    llm_verdict_confidence = verdict.confidence if (result.ok and verdict) else None
-    llm_degraded = result.degraded
+        # This node runs inside asyncio.to_thread()'s worker thread (see
+        # supervisor.run_pipeline), which has no event loop of its own, so
+        # asyncio.run() creates and tears down a fresh loop for this call.
+        result = asyncio.run(
+            gateway.complete(prompt, schema=ResolverVerdict, task_tag="resolver_verdict")
+        )
 
-    tb.add(
-        kind="resolve",
-        label=f"LLM verdict: {'MATCH' if (verdict and verdict.match) else 'NO MATCH'}",
-        detail=(
-            verdict.reasoning if verdict
-            else f"LLM degraded after {result.attempts} attempts"
-        ),
-        values={
-            "llm_ok": result.ok,
-            "llm_model": result.model_used,
-            "llm_degraded": llm_degraded,
-            "llm_confidence": llm_verdict_confidence,
-            "llm_attempts": result.attempts,
-            "from_cache": result.from_cache,
-        },
-        outcome="pass" if (result.ok and verdict and verdict.match) else "fail",
-    )
+        verdict: ResolverVerdict | None = result.data
+        llm_verdict_confidence = verdict.confidence if (result.ok and verdict) else None
+        llm_degraded = result.degraded
+
+        tb.add(
+            kind="resolve",
+            label=f"LLM verdict: {'MATCH' if (verdict and verdict.match) else 'NO MATCH'}",
+            detail=(
+                verdict.reasoning if verdict
+                else f"LLM degraded after {result.attempts} attempts"
+            ),
+            values={
+                "llm_ok": result.ok,
+                "llm_model": result.model_used,
+                "llm_degraded": llm_degraded,
+                "llm_confidence": llm_verdict_confidence,
+                "llm_attempts": result.attempts,
+                "from_cache": result.from_cache,
+            },
+            outcome="pass" if (result.ok and verdict and verdict.match) else "fail",
+        )
 
     # ── Verification combiner ─────────────────────────────────────────────────
     # Load policy inside try so a missing policy.yaml doesn't crash the pipeline
@@ -124,10 +137,11 @@ def resolver(state: AuditorState, *, gateway) -> AuditorState:
     state["band"] = band
     state["trace"] = tb
 
-    if band == "dismiss":
-        state["final_outcome"] = "dismissed"
-    elif band == "review":
-        state["final_outcome"] = "review_queued"
-    # "proceed" → no final_outcome yet; investigator will set it
+    # Design decision (see sanctions_agent + supervisor routing): a resolved
+    # entity is always investigated. The confidence band is retained above for
+    # the decision trace and telemetry and is available to the investigator, but
+    # it no longer terminates the pipeline — every resolved entity flows through
+    # to scoring, alerting, and SAR generation.
+    state["final_outcome"] = ""
 
     return state

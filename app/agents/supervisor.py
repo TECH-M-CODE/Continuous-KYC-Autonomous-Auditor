@@ -61,7 +61,11 @@ def get_gateway() -> LLMGateway:
     """Return the module-level LLMGateway, building it on first call."""
     global _gateway
     if _gateway is None:
-        _gateway = LLMGateway(client=build_client())
+        # One attempt per model (primary + fallback) bounds worst-case latency when
+        # the provider is degraded: at most 2 calls * REQUEST_TIMEOUT_SECONDS before
+        # the ladder falls back to cache/human review, instead of 4. Keeps a live
+        # "Inject" demo responsive even when NVIDIA is slow.
+        _gateway = LLMGateway(client=build_client(), max_attempts_per_model=1)
         log.info("LLMGateway initialised (client=%s)", type(_gateway._client).__name__)
     return _gateway
 
