@@ -42,10 +42,17 @@ __all__ = ["compute_confidence", "to_band"]
 
 
 def _cfg(policy: Any) -> Any:
+    """Descend into policy.verification.confidence, defaulting to {} at any
+    missing step -- this nested block is optional (RiskPolicy today has no
+    ``verification`` field at all), and every caller of the returned node goes
+    through ``_c()``, which already falls back to sane per-key defaults.
+    """
     node = policy
     for key in ("verification", "confidence"):
-        node = node.get(key) if isinstance(node, dict) else getattr(node, key)
-    return node
+        if node is None:
+            return {}
+        node = node.get(key) if isinstance(node, dict) else getattr(node, key, None)
+    return node if node is not None else {}
 
 
 def _c(node: Any, key: str, default: Any = None) -> Any:

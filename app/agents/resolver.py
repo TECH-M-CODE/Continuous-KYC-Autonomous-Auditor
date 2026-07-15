@@ -55,8 +55,11 @@ def resolver(state: AuditorState, *, gateway) -> AuditorState:
         event_source=state.get("event_raw", {}).get("source", "unknown"),
     )
 
-    # Run async gateway in sync context (LangGraph nodes are sync by default)
-    result = asyncio.get_event_loop().run_until_complete(
+    # Run async gateway in sync context. This node runs inside asyncio.to_thread()'s
+    # worker thread (see supervisor.run_pipeline), which has no event loop of its
+    # own -- asyncio.get_event_loop() raises RuntimeError there. asyncio.run()
+    # creates and tears down a fresh loop for this call instead.
+    result = asyncio.run(
         gateway.complete(prompt, schema=ResolverVerdict, task_tag="resolver_verdict")
     )
 

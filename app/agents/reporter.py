@@ -80,7 +80,9 @@ def reporter(state: AuditorState, *, gateway) -> AuditorState:
         new_risk_score=state.get("new_risk_score", 0.0),
     )
 
-    result = asyncio.get_event_loop().run_until_complete(
+    # See resolver.py's comment: this node runs in asyncio.to_thread()'s worker
+    # thread, which has no event loop -- asyncio.run() creates one for this call.
+    result = asyncio.run(
         gateway.complete(prompt, schema=SARNarrativeResult, task_tag="sar_narrative")
     )
 
@@ -99,6 +101,12 @@ def reporter(state: AuditorState, *, gateway) -> AuditorState:
         log.warning("reporter: SAR narrative LLM degraded for entity=%s", entity_name)
 
     # ── Determine alert priority ──────────────────────────────────────────────
+    # risk_band can be "UNKNOWN" (investigator's scoring step failed -- e.g. an
+    # event_type absent from policy.yaml's weights) or any other unrecognized
+    # value. Alert.band has a DB CHECK constraint restricted to low/medium/
+    # high/critical, so an unsanitized value here would crash this insert and
+    # silently drop the whole alert -- fall back to MEDIUM like priority does.
+    db_band = risk_band.upper() if risk_band.upper() in _BAND_TO_PRIORITY else "MEDIUM"
     priority = _BAND_TO_PRIORITY.get(risk_band.upper(), "MEDIUM")
     final_outcome = _RISK_BAND_TO_OUTCOME.get(risk_band.upper(), "alert_medium")
 
@@ -137,10 +145,10 @@ def reporter(state: AuditorState, *, gateway) -> AuditorState:
             # 1. Create Alert
             alert = Alert(
                 entity_id=entity_id,
-                trigger_event_id=state.get("event_id"),
+                trigger_event_id=state.get("risk_event_id"),
                 priority=priority,
                 status="OPEN",
-                band=risk_band.upper(),
+                band=db_band,
                 trace=trace_json,
             )
             uow.alerts.add(alert)
@@ -192,13 +200,14 @@ def reporter(state: AuditorState, *, gateway) -> AuditorState:
                 entity_id=entity_id,
             )
 
-            # 6. Mark RawEvent processed
-            with UnitOfWork() as uow2:
-                raw_ev = uow2.events.get(state.get("event_id", ""))
-                if raw_ev:
-                    raw_ev.processed = True
-                    raw_ev.status = "PROCESSED"
-                    uow2.commit()
+            # 6. Mark RawEvent processed -- same uow/session as everything above,
+            # so this stays part of the one atomic transaction (a second, nested
+            # UnitOfWork here opened a second SQLite connection while this one's
+            # transaction was still open, deadlocking with "database is locked").
+            raw_ev = uow.events.get(state.get("event_id", ""))
+            if raw_ev:
+                raw_ev.processed = True
+                raw_ev.status = "PROCESSED"
 
             uow.commit()
 

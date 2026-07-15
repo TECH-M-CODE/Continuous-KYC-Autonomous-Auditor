@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { trace_critical, trace_dismissed } from '../mocks/traces';
 
 export const API_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
@@ -23,8 +22,8 @@ client.interceptors.response.use((response) => {
 // For Sprint 2: we will wrap all calls in try/catch and fallback to mock data
 // if the backend isn't ready. This ensures the frontend UI can be fully tested.
 export const apiClient = {
-  getAlerts: async () => {
-    const res = await client.get('/alerts');
+  getAlerts: async (params = {}) => {
+    const res = await client.get('/alerts', { params });
     return res.data?.items || res.data || [];
   },
   
@@ -48,8 +47,13 @@ export const apiClient = {
     return res.data?.items || res.data || [];
   },
 
-  getWatchlist: async () => {
-    const res = await client.get('/entities');
+  getWatchlist: async (params = {}) => {
+    const res = await client.get('/entities', { params });
+    return res.data?.items || res.data || [];
+  },
+
+  getSARs: async (params = {}) => {
+    const res = await client.get('/sars', { params });
     return res.data?.items || res.data || [];
   },
 
