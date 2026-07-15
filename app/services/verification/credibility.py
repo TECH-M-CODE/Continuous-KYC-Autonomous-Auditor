@@ -73,11 +73,18 @@ def _norm_source_key(source: str) -> str:
 
 
 def _cfg(policy: Any) -> Any:
-    """Accept either a Pydantic RiskPolicy or a plain dict."""
+    """Accept either a Pydantic RiskPolicy or a plain dict.
+
+    Defaults to {} at any missing step -- this nested block is optional
+    (RiskPolicy today has no ``verification`` field at all), and every caller
+    goes through ``_get()``, which already falls back to per-key defaults.
+    """
     node = policy
     for key in ("verification", "credibility"):
-        node = node.get(key) if isinstance(node, dict) else getattr(node, key)
-    return node
+        if node is None:
+            return {}
+        node = node.get(key) if isinstance(node, dict) else getattr(node, key, None)
+    return node if node is not None else {}
 
 
 def _get(node: Any, key: str, default: Any = None) -> Any:

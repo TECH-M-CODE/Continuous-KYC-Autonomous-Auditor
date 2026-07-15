@@ -165,6 +165,7 @@ async def run_pipeline(event: RawEvent) -> AuditorState:
         "score_delta": 0.0,
         "new_risk_score": 0.0,
         "risk_band": "LOW",
+        "risk_event_id": None,
         "evidence": [],
         "investigation_summary": None,
         "alert_id": None,
