@@ -53,6 +53,11 @@ export const apiClient = {
     return res.data?.items || res.data || [];
   },
 
+  addCustomer: async (data) => {
+    const res = await client.post('/entities', data);
+    return res.data;
+  },
+
   getSARs: async (params = {}) => {
     const res = await client.get('/sars', { params });
     return res.data?.items || res.data || [];

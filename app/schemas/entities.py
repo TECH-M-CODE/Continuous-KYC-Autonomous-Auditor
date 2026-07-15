@@ -27,6 +27,12 @@ class RiskEventDTO(BaseModel):
     created_at: datetime
 
 
+class EntityCreateDTO(BaseModel):
+    name: str
+    jurisdiction: str
+    sector: str
+
+
 class EntitySummaryDTO(BaseModel):
     id: str
     name: str

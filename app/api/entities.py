@@ -4,8 +4,13 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 
+import uuid
+import json
+import hashlib
 from app.api.deps import PaginationParams, pagination_params
 from app.repositories.unit_of_work import UnitOfWork
+from app.models.entities import Entity
+from app.models.events import RawEvent
 from app.schemas import APIResponse, PaginatedData, paginate, success_response
 from app.schemas.entities import (
     DecisionEdgeDTO,
@@ -15,6 +20,7 @@ from app.schemas.entities import (
     EntityDetailDTO,
     EntityGraphDTO,
     EntitySummaryDTO,
+    EntityCreateDTO,
     PersonDTO,
     RiskEventDTO,
 )
@@ -211,3 +217,42 @@ async def get_entity_graph(entity_id: str, request: Request):
         if entity is None:
             return _not_found(request, entity_id)
         return success_response(_build_entity_graph(entity, uow))
+
+
+@router.post("", response_model=APIResponse[EntitySummaryDTO])
+async def create_entity(data: EntityCreateDTO):
+    with UnitOfWork() as uow:
+        entity_id = f"C_{uuid.uuid4().hex[:8]}"
+        entity = Entity(
+            id=entity_id,
+            name=data.name,
+            jurisdiction=data.jurisdiction,
+            sector=data.sector,
+            risk_score=0.0,
+            risk_band="LOW",
+            status="ACTIVE",
+            watched=True
+        )
+        uow.entities.add(entity)
+
+        # Trigger instant sanctions scan
+        content = json.dumps({
+            "event_type": "NEW_CUSTOMER_SCAN",
+            "source": "manual_entry",
+            "entity_hint": entity_id,
+            "entity_name": data.name,
+            "text": f"New customer {data.name} added. Immediate sanctions scan required."
+        })
+        content_hash = hashlib.sha256(content.encode()).hexdigest()
+        
+        raw_event = RawEvent(
+            id=f"E_{uuid.uuid4().hex[:8]}",
+            content_hash=content_hash,
+            content=content,
+            processed=False,
+            status="PENDING"
+        )
+        uow.events.add(raw_event)
+        
+        uow.commit()
+        return success_response(_entity_to_summary(entity))
