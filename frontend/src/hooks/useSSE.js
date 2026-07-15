@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../components/ToastContext';
 
-export const useSSE = (url = '/api/stream') => {
+export const useSSE = (url = '/api/v1/stream') => {
   const [connectionState, setConnectionState] = useState('disconnected'); // 'connected', 'connecting', 'disconnected'
   const [lastEvent, setLastEvent] = useState(null);
   const [events, setEvents] = useState([]);
