@@ -5,10 +5,10 @@ import { Newspaper, ArrowRightLeft, Building2, MapPin, Loader2 } from 'lucide-re
 import { apiClient } from '../api/client';
 
 export const EntityTimeline = () => {
-  // Using a hardcoded ID for now since there's no entity selector yet
-  const entityId = 'ent-881';
+  // Using a hardcoded ID matching the backend mock data
+  const entityId = 'entity-1';
   
-  const { data, isLoading } = useQuery({
+  const { data: entity, isLoading } = useQuery({
     queryKey: ['entity', entityId],
     queryFn: () => apiClient.getEntityTimeline(entityId)
   });
@@ -20,8 +20,6 @@ export const EntityTimeline = () => {
       </div>
     );
   }
-
-  const { entity, timeline } = data || {};
 
   if (!entity) return null;
 
@@ -42,27 +40,32 @@ export const EntityTimeline = () => {
             </div>
             
             <div className="flex items-center gap-4 mt-6 text-sm text-slate-300">
-              <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4 text-slate-500" /> {entity.country}</span>
+              <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4 text-slate-500" /> {entity.jurisdiction}</span>
               <span className="text-slate-600">|</span>
-              <span className="flex items-center gap-1.5"><Building2 className="w-4 h-4 text-slate-500" /> {entity.sector}</span>
+              <span className="flex items-center gap-1.5"><Building2 className="w-4 h-4 text-slate-500" /> {entity.type}</span>
             </div>
           </div>
           
           <div className="text-right">
             <div className="text-sm text-slate-400 mb-1">Risk Score</div>
-            <div className="text-4xl font-bold text-red-400">{entity.current_score}</div>
+            <div className="text-4xl font-bold text-red-400">{entity.risk_score}</div>
+            <StatusBadge band={entity.risk_band?.toLowerCase()} />
           </div>
         </div>
 
-        {/* Flags */}
-        <div className="mt-6 pt-6 border-t border-slate-800 flex flex-wrap gap-2">
-          {entity.pep_flag && <StatusBadge band="high" className="bg-orange-500/10 text-orange-400" />}
-          {entity.fatf_country_flag && <StatusBadge band="critical" className="bg-red-500/10 text-red-400" />}
-          {entity.watched && <span className="px-2.5 py-0.5 rounded-full text-xs font-medium border bg-purple-500/10 text-purple-400 border-purple-500/20">Watched</span>}
-        </div>
+        {/* PEPs */}
+        {entity.peps?.length > 0 && (
+          <div className="mt-6 pt-6 border-t border-slate-800 flex flex-wrap gap-2">
+            {entity.peps.map(pep => (
+              <span key={pep.id} className="px-2.5 py-0.5 rounded-full text-xs font-medium border bg-orange-500/10 text-orange-400 border-orange-500/20">
+                PEP: {pep.full_name} ({pep.role})
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Timeline */}
+      {/* Timeline from recent_events */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
         <h2 className="text-lg font-semibold text-slate-100 mb-6 flex items-center gap-2">
           <History className="w-5 h-5 text-slate-400" />
@@ -70,37 +73,41 @@ export const EntityTimeline = () => {
         </h2>
         
         <div className="relative pl-4 space-y-8 before:absolute before:inset-y-0 before:left-4 before:-ml-px before:w-0.5 before:bg-slate-800">
-          {timeline?.map((event) => (
+          {entity.recent_events?.map((event) => (
             <div key={event.id} className="relative flex gap-4">
-              <div className={`absolute -left-6 w-4 h-4 rounded-full border-2 border-slate-900 flex items-center justify-center ${event.severity === 'high' ? 'bg-red-400' : 'bg-yellow-400'}`}>
+              <div className={`absolute -left-6 w-4 h-4 rounded-full border-2 border-slate-900 flex items-center justify-center ${event.severity === 'CRITICAL' || event.severity === 'HIGH' ? 'bg-red-400' : 'bg-yellow-400'}`}>
               </div>
               
               <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4 flex-1">
                 <div className="flex justify-between items-start mb-2">
                   <div className="flex items-center gap-2">
-                    {event.type === 'adverse_media' ? (
+                    {event.event_category === 'ADVERSE_MEDIA' ? (
                       <Newspaper className="w-4 h-4 text-blue-400" />
                     ) : (
                       <ArrowRightLeft className="w-4 h-4 text-emerald-400" />
                     )}
                     <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                      {event.source}
+                      {event.event_category?.replace('_', ' ')}
                     </span>
                   </div>
                   <span className="text-xs text-slate-500">
-                    {new Date(event.date).toLocaleString()}
+                    {new Date(event.created_at).toLocaleString()}
                   </span>
                 </div>
                 
-                <h3 className="text-sm font-medium text-slate-200">{event.title}</h3>
-                {event.amount && (
+                <h3 className="text-sm font-medium text-slate-200">{event.reasoning}</h3>
+                {event.score_delta != null && (
                   <p className="text-sm text-slate-400 mt-2 font-mono bg-slate-900/50 inline-block px-2 py-1 rounded">
-                    {event.amount}
+                    Score Δ: +{event.score_delta}
                   </p>
                 )}
               </div>
             </div>
           ))}
+
+          {(!entity.recent_events || entity.recent_events.length === 0) && (
+            <div className="text-center text-slate-500 py-8">No recent events for this entity.</div>
+          )}
         </div>
       </div>
     </div>

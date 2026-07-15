@@ -15,18 +15,18 @@ export const ChainVerifyBadge = () => {
   });
 
   if (result) {
-    if (result.valid) {
+    if (result.is_valid) {
       return (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg border border-emerald-500/20 text-sm font-medium">
           <ShieldCheck className="w-4 h-4" />
-          Chain intact — {result.checked} entries verified
+          Chain intact — all entries verified
         </div>
       );
     } else {
       return (
         <div className="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 text-red-400 rounded-lg border border-red-500/20 text-sm font-medium">
           <ShieldAlert className="w-4 h-4" />
-          Chain broken — failure at sequence {result.first_bad_seq}
+          Chain broken — failure at hash {result.broken_at_hash}
         </div>
       );
     }

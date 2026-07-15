@@ -78,9 +78,9 @@ export const AdminWatchlist = () => {
                 <thead className="bg-slate-800/50 text-slate-400 border-b border-slate-800">
                   <tr>
                     <th className="px-6 py-4 font-medium">Entity</th>
-                    <th className="px-6 py-4 font-medium">Jurisdiction</th>
-                    <th className="px-6 py-4 font-medium">Sector Risk</th>
-                    <th className="px-6 py-4 font-medium">Base Score</th>
+                    <th className="px-6 py-4 font-medium">Type</th>
+                    <th className="px-6 py-4 font-medium">Risk Band</th>
+                    <th className="px-6 py-4 font-medium">Risk Score</th>
                     <th className="px-6 py-4 font-medium text-center">Watched</th>
                     <th className="px-6 py-4 font-medium text-right">Actions</th>
                   </tr>
@@ -92,13 +92,13 @@ export const AdminWatchlist = () => {
                         <div className="font-medium text-slate-200">{entity.name}</div>
                         <div className="text-xs text-slate-500 font-mono mt-0.5">{entity.id}</div>
                       </td>
-                      <td className="px-6 py-4 text-slate-300">{entity.country}</td>
+                      <td className="px-6 py-4 text-slate-300">{entity.type}</td>
                       <td className="px-6 py-4">
                         <StatusBadge 
-                          band={entity.sector_risk === 'High' ? 'high' : entity.sector_risk === 'Medium' ? 'medium' : 'low'} 
+                          band={entity.risk_band?.toLowerCase() || 'medium'} 
                         />
                       </td>
-                      <td className="px-6 py-4 font-mono text-slate-400">{entity.score}</td>
+                      <td className="px-6 py-4 font-mono text-slate-400">{entity.risk_score}</td>
                       <td className="px-6 py-4 text-center">
                         <button 
                           onClick={() => toggleWatch(entity.id)}
