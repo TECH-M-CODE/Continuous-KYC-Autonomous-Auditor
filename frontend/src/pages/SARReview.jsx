@@ -52,7 +52,7 @@ export const SARReview = () => {
   });
 
   const approveMutation = useMutation({
-    mutationFn: (notes) => apiClient.approveSAR({ id: sarId, notes }),
+    mutationFn: (comments) => apiClient.approveSAR({ id: sarId, comments }),
     onSuccess: () => {
       queryClient.invalidateQueries(['sar', sarId]);
       addAuditEntry('SAR_APPROVED', 'Approved and filed');
@@ -61,7 +61,7 @@ export const SARReview = () => {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (notes) => apiClient.rejectSAR({ id: sarId, notes }),
+    mutationFn: (comments) => apiClient.rejectSAR({ id: sarId, comments }),
     onSuccess: () => {
       queryClient.invalidateQueries(['sar', sarId]);
       addAuditEntry('SAR_REJECTED', 'Rejected by officer');
@@ -105,10 +105,10 @@ export const SARReview = () => {
           <div className="text-sm text-slate-400 mt-1 flex items-center gap-3">
             <span>Draft ID: {sar.id}</span>
             <span>•</span>
-            <span className="text-slate-300">Entity: {sar.entity_name}</span>
+            <span className="text-slate-300">Alert: {sar.alert_id}</span>
             <span>•</span>
             <span className="bg-slate-800 text-brand-400 px-2 py-0.5 rounded text-xs font-mono">v{sar.version}</span>
-            {sar.status === 'pending_review' ? (
+            {sar.status === 'DRAFT' || sar.status === 'PENDING_APPROVAL' ? (
               <span className="bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded text-xs">Pending Review</span>
             ) : (
               <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded text-xs uppercase">{sar.status}</span>
@@ -138,7 +138,7 @@ export const SARReview = () => {
             <button 
               className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-slate-300 hover:text-slate-100 rounded-lg text-sm font-medium transition-colors"
               onClick={() => setIsEditing(true)}
-              disabled={sar.status !== 'pending_review'}
+              disabled={sar.status !== 'DRAFT' && sar.status !== 'PENDING_APPROVAL'}
             >
               <Edit3 className="w-4 h-4" />
               Edit Narrative
@@ -166,7 +166,7 @@ export const SARReview = () => {
           </div>
 
           {/* Action Box */}
-          {sar.status === 'pending_review' && (
+          {(sar.status === 'DRAFT' || sar.status === 'PENDING_APPROVAL') && (
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
               <h3 className="text-sm font-medium text-slate-200 mb-4">Decision Actions</h3>
               
@@ -247,18 +247,18 @@ export const SARReview = () => {
               Regulatory Citations
             </h3>
             <div className="flex flex-wrap gap-2">
-              {sar.regulatory_basis?.map((reg, idx) => (
+              {sar.citations?.map((cit, idx) => (
                 <button
                   key={idx}
-                  onClick={() => setSelectedCitation(selectedCitation === reg ? null : reg)}
+                  onClick={() => setSelectedCitation(selectedCitation === cit ? null : cit)}
                   className={clsx(
                     "px-3 py-1.5 rounded-full text-xs font-medium transition-colors border flex items-center gap-1",
-                    selectedCitation === reg 
+                    selectedCitation === cit 
                       ? "bg-brand-500/20 border-brand-500/50 text-brand-400"
                       : "bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-600"
                   )}
                 >
-                  {reg.citation}
+                  {cit.source}
                 </button>
               ))}
             </div>
@@ -266,16 +266,16 @@ export const SARReview = () => {
             {/* Citation Drawer / Inline Expansion */}
             {selectedCitation && (
               <div className="mt-4 p-4 bg-slate-950 border border-brand-500/30 rounded-lg animate-in fade-in slide-in-from-top-2">
-                <div className="text-xs font-bold text-brand-400 mb-1">{selectedCitation.citation}</div>
-                <p className="text-sm text-slate-300 italic leading-relaxed">"{selectedCitation.passage}"</p>
+              <div className="text-xs font-bold text-brand-400 mb-1">{selectedCitation.source}</div>
+                <p className="text-sm text-slate-300 italic leading-relaxed">"{selectedCitation.context}"</p>
               </div>
             )}
           </div>
 
-          {/* Evidence Bundle */}
+          {/* Evidence Bundle — uses citations as the evidence source */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <h3 className="text-sm font-semibold text-slate-200 mb-4">Compiled Evidence</h3>
-            <EvidenceBundle evidence={sar.evidence} />
+            <EvidenceBundle evidence={sar.citations?.map(c => ({ source: c.source, snippet: c.context, relevance: 'Medium' })) || []} />
           </div>
         </div>
       </div>
