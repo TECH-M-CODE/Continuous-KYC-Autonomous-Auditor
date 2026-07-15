@@ -2,7 +2,7 @@ import os
 import csv
 import yaml
 from app.models.base import Base, engine
-from app.models.entities import Entity
+from app.models.entities import Entity, EntityPerson
 from app.repositories.unit_of_work import UnitOfWork
 
 CSV_PATH = "data/kyc_profiles/synthetic_kyc_dataset.csv"
@@ -13,7 +13,7 @@ def generate_mock_csv():
     
     headers = [
         "client_id", "client_name", "client_type", "country", 
-        "sector", "sector_risk", "pep_flag", "sanctions_flag", "fatf_country_flag"
+        "sector", "sector_risk", "pep_flag", "sanctions_flag", "fatf_country_flag", "ceo_name"
     ]
     
     # Generate 100 mock companies
@@ -39,11 +39,12 @@ def generate_mock_csv():
         pep = 1 if i % 15 == 0 else 0
         sanctioned = 1 if i % 33 == 0 else 0
         name = f"Global {sector} Solutions {i}"
+        ceo_name = f"Alex Morgan {i}"
         client_type = "Corporate"
         if i % 10 == 0:
             client_type = "Financial Institution"
             
-        data.append([c_id, name, client_type, country, sector, sector_risk, pep, sanctioned, fatf])
+        data.append([c_id, name, client_type, country, sector, sector_risk, pep, sanctioned, fatf, ceo_name])
         
     with open(CSV_PATH, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -74,6 +75,7 @@ def seed():
             sector_risk_map = policy.get("sector_risk", sector_risk_map)
             
     entities_to_add = []
+    persons_to_add = []
     watched_count = 0
     
     with open(CSV_PATH, "r", encoding="utf-8") as f:
@@ -120,6 +122,16 @@ def seed():
             )
             entities_to_add.append(entity)
             
+            # Add CEO Person if provided
+            ceo_name = row.get("ceo_name", "")
+            if ceo_name:
+                person = EntityPerson(
+                    entity_id=client_id,
+                    person_name=ceo_name,
+                    role="CEO"
+                )
+                persons_to_add.append(person)
+            
     # Persist via UnitOfWork context manager
     with UnitOfWork() as uow:
         # Clear existing entities to allow clean re-runs
@@ -130,6 +142,10 @@ def seed():
         
         for entity in entities_to_add:
             uow.entities.add(entity)
+            
+        for person in persons_to_add:
+            uow.session.add(person)
+            
         uow.commit()
         
     print(f"Successfully seeded {len(entities_to_add)} entities into the database.")

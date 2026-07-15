@@ -24,6 +24,15 @@ from app.schemas.entities import (
     PersonDTO,
     RiskEventDTO,
 )
+from pydantic import BaseModel
+
+class DuplicateMatchDTO(BaseModel):
+    id: str
+    name: str
+    type: str
+    role: str
+    risk_band: str
+    risk_score: float
 
 router = APIRouter(prefix="/entities", tags=["entities"])
 
@@ -199,6 +208,46 @@ async def list_entities(
         summaries = [_entity_to_summary(e) for e in page_items]
 
     return success_response(paginate(summaries, total=total, page=pagination.page, page_size=pagination.limit))
+
+
+@router.get("/check-duplicate", response_model=APIResponse[list[DuplicateMatchDTO]])
+async def check_duplicate(name: str = Query(...)):
+    name_lower = name.lower()
+    matches = []
+    
+    with UnitOfWork() as uow:
+        # 1. Check primary entities
+        entities = uow.session.query(Entity).filter(
+            Entity.name.ilike(f"%{name_lower}%")
+        ).all()
+        for e in entities:
+            matches.append(DuplicateMatchDTO(
+                id=e.id,
+                name=e.name,
+                type="COMPANY",
+                role="Primary Entity",
+                risk_band=e.risk_band,
+                risk_score=e.risk_score
+            ))
+            
+        # 2. Check persons
+        from app.models.entities import EntityPerson
+        persons = uow.session.query(EntityPerson).filter(
+            EntityPerson.person_name.ilike(f"%{name_lower}%")
+        ).all()
+        for p in persons:
+            e = p.entity
+            if e:
+                matches.append(DuplicateMatchDTO(
+                    id=e.id,
+                    name=p.person_name,
+                    type="PERSON",
+                    role=f"{p.role} at {e.name}",
+                    risk_band=e.risk_band,
+                    risk_score=e.risk_score
+                ))
+                
+    return success_response(matches)
 
 
 @router.get("/{entity_id}", response_model=APIResponse[EntityDetailDTO])
