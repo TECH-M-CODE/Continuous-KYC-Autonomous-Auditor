@@ -1,162 +1,77 @@
-import uuid
+"""Index the real seeded entities from SQLite into ChromaDB's `entity_cards`
+collection so the Resolver agent can match live events to real entity IDs.
+
+Previously this file indexed 10 hardcoded fake entities (Acme/Wayne/Umbrella),
+which meant `resolver.retrieve_entity_candidates()` could never resolve an event
+to a real `C_0001`-style entity. It now reads whatever `seed_entities` put in the
+database. Re-run after every re-seed:  python -m knowledge.index_entities
+"""
+
 from knowledge.store import get_collection
 from knowledge.chunker import chunk_entity_card
+from app.repositories.unit_of_work import UnitOfWork
 
-# Create 10 fake entities including Acme Holdings
-fake_entities = [
-    {
-        "id": str(uuid.uuid4()),
-        "name": "Acme Holdings",
-        "country": "Cayman Islands",
-        "sector": "Real Estate",
-        "sector_risk": "High",
+
+def _entity_to_card_dict(entity) -> dict:
+    """Map the real Entity ORM row onto the dict shape chunk_entity_card expects.
+
+    The domain model stores `jurisdiction`/`sector`/`risk_band` (no separate
+    country/pep/sanctions flags), so we derive the card fields from what exists.
+    """
+    band = (entity.risk_band or "").upper()
+    return {
+        "id": entity.id,
+        "name": entity.name,
+        "country": entity.jurisdiction or "Unknown",
+        "sector": entity.sector or "Unknown",
+        # No dedicated flag columns in the model; surface risk band as a soft
+        # signal so the embedded card still carries the entity's risk posture.
+        "sanctions_flag": band == "CRITICAL",
         "pep_flag": False,
-        "sanctions_flag": False,
-        "fatf_country_flag": True,
-        "base_score": 60,
-        "current_score": 60,
-        "watched": True
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "name": "Global Tech Corp",
-        "country": "USA",
-        "sector": "Technology",
-        "sector_risk": "Low",
-        "pep_flag": False,
-        "sanctions_flag": False,
         "fatf_country_flag": False,
-        "base_score": 10,
-        "current_score": 10,
-        "watched": False
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "name": "Oceanic Airlines",
-        "country": "Australia",
-        "sector": "Transportation",
-        "sector_risk": "Medium",
-        "pep_flag": False,
-        "sanctions_flag": False,
-        "fatf_country_flag": False,
-        "base_score": 25,
-        "current_score": 25,
-        "watched": False
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "name": "Sterling Cooper",
-        "country": "UK",
-        "sector": "Advertising",
-        "sector_risk": "Low",
-        "pep_flag": False,
-        "sanctions_flag": False,
-        "fatf_country_flag": False,
-        "base_score": 10,
-        "current_score": 10,
-        "watched": False
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "name": "Wayne Enterprises",
-        "country": "USA",
-        "sector": "Defense",
-        "sector_risk": "High",
-        "pep_flag": True,
-        "sanctions_flag": False,
-        "fatf_country_flag": False,
-        "base_score": 75,
-        "current_score": 75,
-        "watched": True
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "name": "Umbrella Corp",
-        "country": "Switzerland",
-        "sector": "Pharmaceuticals",
-        "sector_risk": "High",
-        "pep_flag": False,
-        "sanctions_flag": True,
-        "fatf_country_flag": False,
-        "base_score": 90,
-        "current_score": 90,
-        "watched": True
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "name": "Massive Dynamic",
-        "country": "USA",
-        "sector": "Technology",
-        "sector_risk": "Low",
-        "pep_flag": False,
-        "sanctions_flag": False,
-        "fatf_country_flag": False,
-        "base_score": 10,
-        "current_score": 10,
-        "watched": False
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "name": "LexCorp",
-        "country": "USA",
-        "sector": "Technology",
-        "sector_risk": "Medium",
-        "pep_flag": True,
-        "sanctions_flag": False,
-        "fatf_country_flag": False,
-        "base_score": 60,
-        "current_score": 60,
-        "watched": True
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "name": "Cyberdyne Systems",
-        "country": "USA",
-        "sector": "Defense",
-        "sector_risk": "High",
-        "pep_flag": False,
-        "sanctions_flag": False,
-        "fatf_country_flag": False,
-        "base_score": 50,
-        "current_score": 50,
-        "watched": False
-    },
-    {
-        "id": str(uuid.uuid4()),
-        "name": "InGen",
-        "country": "Costa Rica",
-        "sector": "Biotech",
-        "sector_risk": "High",
-        "pep_flag": False,
-        "sanctions_flag": False,
-        "fatf_country_flag": False,
-        "base_score": 40,
-        "current_score": 40,
-        "watched": False
     }
-]
+
 
 def index_entities():
-    print(f"Indexing {len(fake_entities)} fake entities into ChromaDB...")
+    with UnitOfWork() as uow:
+        entities = uow.entities.list()
+
+    if not entities:
+        print(
+            "No entities found in the database. Run `python -m data.seed.seed_entities` "
+            "first, then re-run this indexer."
+        )
+        return
+
+    print(f"Indexing {len(entities)} real entities into ChromaDB...")
     collection = get_collection("entity_cards")
-    
-    ids = []
-    documents = []
-    metadatas = []
-    
-    for entity in fake_entities:
-        card_text = chunk_entity_card(entity)
-        ids.append(entity["id"])
-        documents.append(card_text)
-        metadatas.append({"name": entity["name"], "watched": entity["watched"]})
-        
-    collection.upsert(
-        ids=ids,
-        documents=documents,
-        metadatas=metadatas
-    )
-    
-    print("Indexing complete.")
+
+    # Purge any stale cards (e.g. the old hardcoded Acme/Wayne fakes, or entities
+    # dropped from a prior seed) so resolution only ever matches current DB rows.
+    real_ids = {e.id for e in entities}
+    existing = collection.get(include=[])
+    stale = [cid for cid in existing.get("ids", []) if cid not in real_ids]
+    if stale:
+        collection.delete(ids=stale)
+        print(f"Removed {len(stale)} stale entity cards.")
+
+    ids, documents, metadatas = [], [], []
+    for entity in entities:
+        card = _entity_to_card_dict(entity)
+        ids.append(entity.id)
+        documents.append(chunk_entity_card(card))
+        metadatas.append(
+            {
+                "name": entity.name,
+                "watched": bool(entity.watched),
+                "jurisdiction": entity.jurisdiction or "",
+                "risk_band": entity.risk_band or "LOW",
+            }
+        )
+
+    collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
+    print(f"Indexing complete. {len(ids)} entity cards upserted.")
+
 
 if __name__ == "__main__":
     index_entities()

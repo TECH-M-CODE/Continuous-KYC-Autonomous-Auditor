@@ -347,4 +347,60 @@ The dormancy check deliberately does **not** alter the risk score — silence is
 
 ---
 
-*Prepared as part of the system design phase for Challenge 3 — Continuous KYC Autonomous Auditor.*
+## 8. Implementation Status (As-Built)
+
+This section reconciles the design above with the working code, so the document
+reflects what the system *does*, not only what it was intended to do. Sections 1–7
+describe the target architecture; the notes below record where the current
+implementation fully realizes it and the few places it deviates.
+
+### 8.1 Realized as designed
+
+| Area | As-built location | Notes |
+|---|---|---|
+| Layered structure | `app/api` → `app/services` → `app/repositories` → `app/models` | Client/App/Domain/Storage layers as designed |
+| Event-driven ingestion (Loop A) | `app/services/ingestion/` (`base.AdapterRegistry`, `build_scheduler`) | `ProvidedDatasetAdapter`, `SanctionsListAdapter`, `TransactionReplayAdapter`, `InjectAdapter` registered in `app/main.py` lifespan; APScheduler fires each on its own interval, first run at boot |
+| Processing pipeline (Loop B) | `app/agents/supervisor.py:run_pipeline` + `poll_unprocessed_events` | LangGraph `StateGraph` over `AuditorState`: monitor → resolver → investigator → reporter with the conditional-edge routing in §5.1 |
+| Deterministic scoring | `app/services/scoring/` (`rule_engine`, `bands`, `velocity`, `policy`) | LLM classifies; arithmetic is a pure function over `policy.yaml` |
+| Network propagation | `app/services/scoring/propagator.py` | 1-hop over `entity_persons` shared-name graph, `indirect=True`, cycle-safe |
+| Hash-chained audit | `app/services/audit_service.py:append_audit` / `verify_chain` | Global genesis-anchored chain; `GET /api/v1/audit/verify` walks every link |
+| LLM Gateway + fallback | `app/infrastructure/llm_gateway.py`, `gemini_client.py`, `llm_mock.py` | `build_client()` returns real `GeminiClient` when `GOOGLE_API_KEY`/`GEMINI_API_KEY` is set, else the deterministic mock ladder — no code change to switch |
+| Two-stage screening | `app/services/screening.py` | `rapidfuzz.token_set_ratio` pre-filter (threshold 80) against `sanctions_cache`, both forward and reverse (watchlist-addition) directions |
+| SSE broadcast | `app/api/sse.py`, `app/infrastructure/broker.py` | `EventSource` stream for `alert.new` / `alert.updated` / `sar.ready` |
+| Human-in-the-loop SAR | `app/api/sar.py`, `app/services/sar_service.py` | Versioned edits, approve/reject/request-info, sign-off audited; no auto-file |
+| Loop D — self-assessment | `app/services/loop_d.py`, scheduled in `app/main.py` | **Now wired**: an APScheduler interval job (`loop_d_interval_seconds`, default 900s, first run ~20s after boot) runs the red-team drill and dormancy sweep, both writing hash-chained audit entries |
+| Red-team detection health | `app/services/red_team_drill.py`, `GET /api/v1/drill/latest` | Deterministic name-evasion variants run through the real screening path; backs the dashboard's DetectionHealth card. The heavier LLM variant generator remains in `demo/red_team.py` as the on-demand path |
+| Entity decision graph | `GET /api/v1/entities/{id}/graph` | Built from the entity's `risk_events` (React-Flow node/edge shape) |
+
+### 8.2 Deviations from the design, and why
+
+- **Screening gate is sanctions-based, not generic watchlist-membership.** §5.1 phrases
+  the pre-filter as "fuzzy match vs watchlist." In code the resolved entity (and its
+  directors) is matched against `sanctions_cache`; an event only advances to the agent
+  network on a sanctions/watchlist hit. Pure adverse-media on a non-sanctioned entity is
+  screened out at this stage. The demo relies on seeded directors that are guaranteed
+  members of the sanctions list (`data/prep/gen_directors.EXACT_MATCH_NAMES`).
+- **Gemini model IDs.** §2 names `gemini-3.1-flash-lite`; the client (`gemini_client._MODEL_MAP`)
+  maps the gateway's model tags onto currently-available IDs (`gemini-1.5-flash-8b` /
+  `gemini-1.5-flash`). Adjust the map when target models change.
+- **Vector store scope.** `entity_cards` is populated from the seeded DB by
+  `knowledge/index_entities.py`; `event_context` / `regulatory_corpus` are provisioned but
+  used opportunistically by the investigator/reporter RAG steps.
+- **Loop D cadence.** Designed as nightly/daily; implemented as a configurable interval
+  (short by default so the behavior is observable in a demo). Set
+  `loop_d_interval_seconds=0` to disable.
+- **Decision-replay (UC16)** and **per-person PEP scoring** are not yet backed by dedicated
+  tables; the entity graph and audit trail cover the adjacent regulator/auditor use cases.
+
+### 8.3 Runtime prerequisites (see SETUP.md)
+
+The pipeline is only "live" once its data is present: seed entities → directors → account
+map → **ChromaDB index of real entities**, and the backend must boot at least once so the
+`SanctionsListAdapter` populates `sanctions_cache` (it loads OFAC + OpenSanctions from
+`data/sanctions/` on startup). With those in place, an injected adverse-media event for a
+watched entity with a sanctioned director flows end-to-end to a live alert and a valid
+audit chain.
+
+---
+
+*Prepared as part of the system design phase for Challenge 3 — Continuous KYC Autonomous Auditor. Section 8 records the as-built status of the working prototype.*

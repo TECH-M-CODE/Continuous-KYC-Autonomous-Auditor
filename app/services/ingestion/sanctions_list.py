@@ -1,8 +1,12 @@
 """SanctionsListAdapter: ETag-gated diff refresh of OFAC/OpenSanctions into sanctions_cache.
 
 Sequence 6.3 in the Sprint 2 plan. See this module's class docstring for the
-five concrete design decisions (fake file:// ETag, OpenSanctions sampling,
-diff key, unchained audit entry, injected cache) flagged at review time.
+four concrete design decisions (fake file:// ETag, OpenSanctions sampling,
+diff key, injected cache) flagged at review time. A fifth -- an unchained
+audit entry, pending Dev 3's real chaining -- was resolved: list_refreshed
+entries now go through audit_service.append_audit() like everything else,
+since the separately-hashed sentinel row broke /audit/verify the moment one
+landed between two real chained entries in insertion order.
 """
 from __future__ import annotations
 
@@ -17,9 +21,9 @@ from typing import Callable
 import pandas as pd
 
 from app.infrastructure.cache import LocalMemoryCache
-from app.models.audit import AuditLog
 from app.models.sanctions import SanctionsCache
 from app.repositories.unit_of_work import UnitOfWork
+from app.services.audit_service import append_audit
 from app.services.ingestion.base import FeedAdapter, IngestedEvent
 from data.prep.gen_directors import EXACT_MATCH_NAMES  # keep the guaranteed-inclusion set in sync
 
@@ -33,7 +37,6 @@ OPENSANCTIONS_SAMPLE_SIZE = 5_000
 RANDOM_SEED = 42
 
 CACHE_TTL_SECONDS = 30 * 24 * 60 * 60  # effectively persistent for the demo's lifetime
-UNCHAINED_SENTINEL = "UNCHAINED_SPRINT2"  # not "GENESIS" -- real chaining is Dev 3's Sprint 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,30 +191,15 @@ class SanctionsListAdapter(FeedAdapter):
 
     @staticmethod
     def _audit_list_refreshed(list_source: str, added_count: int, versioned_out_count: int, etag: str) -> None:
-        """Write an audit_log row for this refresh. NOT hash-chained -- see module docstring."""
+        """Write a list_refreshed audit_log row into the real hash chain."""
         payload = {
             "list_source": list_source,
             "added": added_count,
             "versioned_out": versioned_out_count,
             "etag": etag,
         }
-        payload_json = json.dumps(payload, sort_keys=True)
-        timestamp = datetime.now(timezone.utc)
-        entry_hash = hashlib.sha256(
-            f"{UNCHAINED_SENTINEL}|list_refreshed|{payload_json}|{timestamp.isoformat()}".encode("utf-8")
-        ).hexdigest()
-
         with UnitOfWork() as uow:
-            uow.audit_log.add(
-                AuditLog(
-                    actor_id="system",
-                    action="list_refreshed",
-                    payload=payload_json,
-                    prev_hash=UNCHAINED_SENTINEL,
-                    entry_hash=entry_hash,
-                    timestamp=timestamp,
-                )
-            )
+            append_audit(action="list_refreshed", payload=payload, uow=uow)
             uow.commit()
 
     @staticmethod
