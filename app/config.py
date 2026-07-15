@@ -1,8 +1,9 @@
 """Centralized application settings, sourced from environment variables / .env."""
 from functools import lru_cache
+from typing import Annotated
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -19,7 +20,14 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 480
     rate_limit_per_minute: int = 60
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:5174", "http://localhost:5175"]
+    # NoDecode stops pydantic-settings from JSON-decoding the raw env value, so a
+    # plain comma-separated string in .env (CORS_ORIGINS=http://a,http://b) reaches
+    # the validator below instead of crashing json.loads. A JSON array still works too.
+    cors_origins: Annotated[list[str], NoDecode] = [
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
+    ]
 
     # Database & Infrastructure
     database_url: str = "sqlite+aiosqlite:///./data/sentinelai.db"
@@ -36,6 +44,11 @@ class Settings(BaseSettings):
 
     # Datasets
     data_dir: str = "./data"
+
+    # Loop D — autonomous self-assessment (red-team drill + dormancy sweep).
+    # Design intent is nightly; kept short here so the behavior is observable in a
+    # demo/dev run. Set to 0 to disable scheduling entirely.
+    loop_d_interval_seconds: int = 900
 
     @field_validator("cors_origins", mode="before")
     @classmethod

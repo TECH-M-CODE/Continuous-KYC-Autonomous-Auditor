@@ -22,7 +22,7 @@ from pydantic import BaseModel
 
 from app.agents.state import AuditorState
 from app.agents.prompts.reporter_prompts import build_reporter_prompt
-from app.infrastructure.broker import broker, ALERT_NEW, SAR_READY
+from app.infrastructure.broker import broker, ALERT_NEW, SAR_READY, ENTITY_UPDATED
 from app.models.events import Alert
 from app.repositories.unit_of_work import UnitOfWork
 from app.services.audit_service import append_audit
@@ -227,6 +227,16 @@ def reporter(state: AuditorState, *, gateway) -> AuditorState:
             "priority": priority,
             "band": risk_band,
             "confidence": state.get("confidence"),
+        })
+        # Drives the live risk-score update on the Entity Timeline panel: useSSE
+        # invalidates the ['entity'] query on this event, so the score/timeline
+        # re-fetch the moment the news lands — no manual refresh.
+        broker.publish(ENTITY_UPDATED, {
+            "entity_id": entity_id,
+            "entity_name": entity_name,
+            "new_risk_score": state.get("new_risk_score"),
+            "risk_band": risk_band,
+            "score_delta": state.get("score_delta"),
         })
         if sar_id:
             broker.publish(SAR_READY, {
