@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useSSE } from '../hooks/useSSE';
 import { StatusBadge } from '../components/StatusBadge';
@@ -17,6 +17,19 @@ export const AlertQueue = () => {
     queryFn: apiClient.getAlerts,
   });
 
+  const queryClient = useQueryClient();
+
+  const actionMutation = useMutation({
+    mutationFn: apiClient.actionAlert,
+    onSuccess: () => {
+      queryClient.invalidateQueries(['alerts']);
+    }
+  });
+
+  const handleAction = (id, action) => {
+    actionMutation.mutate({ id, action, reasoning: `Manual ${action} by reviewer` });
+  };
+
   useEffect(() => {
     if (lastEvent?.type === 'alert.new') {
       const newAlert = lastEvent.data;
@@ -26,7 +39,7 @@ export const AlertQueue = () => {
     }
   }, [lastEvent]);
 
-  const filteredAlerts = alerts.filter(a => filter === 'all' || a.band === filter);
+  const filteredAlerts = alerts.filter(a => filter === 'all' || a.priority?.toLowerCase() === filter);
 
   return (
     <div className="flex flex-col h-full space-y-6">
@@ -43,8 +56,8 @@ export const AlertQueue = () => {
               <Shield className="w-5 h-5 text-red-400" />
             </div>
             <div className="flex-1">
-              <h4 className="text-sm font-semibold text-slate-100">New {toast.band} Alert</h4>
-              <p className="text-xs text-slate-400 mt-1">{toast.entity_name || toast.entity_id} - Score: {toast.score}</p>
+              <h4 className="text-sm font-semibold text-slate-100">New {toast.priority} Alert</h4>
+              <p className="text-xs text-slate-400 mt-1">{toast.entity_name} — {toast.status}</p>
             </div>
             <button onClick={() => setToast(null)} className="text-slate-500 hover:text-slate-300">
               <X className="w-4 h-4" />
@@ -88,9 +101,8 @@ export const AlertQueue = () => {
               <thead className="bg-slate-800/50 text-slate-400">
                 <tr>
                   <th className="px-6 py-4 font-medium">Entity</th>
-                  <th className="px-6 py-4 font-medium">Risk Band</th>
-                  <th className="px-6 py-4 font-medium">Score</th>
-                  <th className="px-6 py-4 font-medium">Event Type</th>
+                  <th className="px-6 py-4 font-medium">Priority</th>
+                  <th className="px-6 py-4 font-medium">Status</th>
                   <th className="px-6 py-4 font-medium">Time (UTC)</th>
                   <th className="px-6 py-4 font-medium text-right">Actions</th>
                 </tr>
@@ -112,13 +124,10 @@ export const AlertQueue = () => {
                         <div className="text-xs text-slate-500 font-mono mt-0.5">{alert.id}</div>
                       </td>
                       <td className="px-6 py-4">
-                        <StatusBadge band={alert.band} />
+                        <StatusBadge band={alert.priority?.toLowerCase()} />
                       </td>
                       <td className="px-6 py-4">
-                        <span className="font-mono text-slate-300">{alert.score}</span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-slate-400">{alert.event_type}</span>
+                        <span className="text-slate-400">{alert.status}</span>
                       </td>
                       <td className="px-6 py-4 text-slate-400 text-xs">
                         {new Date(alert.created_at).toLocaleTimeString()}
@@ -132,10 +141,16 @@ export const AlertQueue = () => {
                             <GitMerge className="w-3.5 h-3.5" />
                             Why?
                           </Link>
-                          <button className="p-1.5 text-slate-400 hover:text-green-400 hover:bg-green-400/10 rounded-md transition-colors" title="Dismiss">
+                          <button 
+                            onClick={() => handleAction(alert.id, 'DISMISS')}
+                            disabled={actionMutation.isPending}
+                            className="p-1.5 text-slate-400 hover:text-green-400 hover:bg-green-400/10 rounded-md transition-colors" title="Dismiss">
                             <Check className="w-4 h-4" />
                           </button>
-                          <button className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors" title="Escalate">
+                          <button 
+                            onClick={() => handleAction(alert.id, 'ESCALATE')}
+                            disabled={actionMutation.isPending}
+                            className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors" title="Escalate">
                             <Shield className="w-4 h-4" />
                           </button>
                         </div>
@@ -146,7 +161,7 @@ export const AlertQueue = () => {
                 
                 {filteredAlerts.length === 0 && (
                   <tr>
-                    <td colSpan="6" className="px-6 py-12 text-center text-slate-500">
+                    <td colSpan="5" className="px-6 py-12 text-center text-slate-500">
                       No alerts in this queue.
                     </td>
                   </tr>
