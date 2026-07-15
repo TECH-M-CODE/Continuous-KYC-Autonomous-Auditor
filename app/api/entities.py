@@ -246,6 +246,22 @@ async def check_duplicate(name: str = Query(...)):
                     risk_band=e.risk_band,
                     risk_score=e.risk_score
                 ))
+
+        # 3. Check sanctions list
+        from app.models.sanctions import SanctionsCache
+        sanctions = uow.session.query(SanctionsCache).filter(
+            SanctionsCache.name_normalized.ilike(f"%{name_lower}%")
+        ).limit(5).all()
+        
+        for s in sanctions:
+            matches.append(DuplicateMatchDTO(
+                id=s.id,
+                name=s.name,
+                type="PERSON",
+                role=f"Sanctions Target ({s.sanction_program or s.list_source})",
+                risk_band="CRITICAL",
+                risk_score=99.0
+            ))
                 
     return success_response(matches)
 
