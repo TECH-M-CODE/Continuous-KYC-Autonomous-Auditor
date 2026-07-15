@@ -42,6 +42,7 @@ def entity_agent(state: AuditorState) -> AuditorState:
     entity_hint: str | None = event_raw.get("entity_hint")       # direct entity_id
     name_hint: str = (
         event_raw.get("payload", {}).get("entity_name", "")
+        or event_raw.get("payload", {}).get("sanctioned_name", "")
         or event_raw.get("entity_name", "")
     )
 

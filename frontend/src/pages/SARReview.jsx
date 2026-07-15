@@ -19,16 +19,17 @@ export const SARReview = () => {
   const [optimisticAudit, setOptimisticAudit] = useState([]);
 
   // If no ID is provided, fetch the latest SAR and redirect
-  const { data: latestSars, isLoading: isLatestLoading } = useQuery({
+  const { data: latestSars = [], isLoading: isLatestLoading } = useQuery({
     queryKey: ['sars', 'latest'],
     queryFn: () => apiClient.getSARs({ limit: 1 }),
     enabled: !id,
-    onSuccess: (data) => {
-      if (data && data.items && data.items.length > 0) {
-        navigate(`/sar/${data.items[0].id}`, { replace: true });
-      }
-    }
   });
+
+  React.useEffect(() => {
+    if (!id && latestSars.length > 0) {
+      navigate(`/sar/${latestSars[0].id}`, { replace: true });
+    }
+  }, [id, latestSars, navigate]);
 
   const sarId = id; // use the param id
 
@@ -95,8 +96,8 @@ export const SARReview = () => {
     }
   });
 
-  if (isLatestLoading || isLoading || (!sarId && latestSars?.items?.length === 0)) {
-    if (!sarId && latestSars?.items?.length === 0) {
+  if (isLatestLoading || isLoading || (!sarId && latestSars.length === 0)) {
+    if (!sarId && latestSars.length === 0 && !isLatestLoading) {
       return (
         <div className="flex h-full flex-col items-center justify-center text-center gap-3 text-slate-400">
           <FileText className="w-10 h-10 text-slate-600" />

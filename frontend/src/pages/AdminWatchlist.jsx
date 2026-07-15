@@ -10,7 +10,11 @@ export const AdminWatchlist = () => {
   const queryClient = useQueryClient();
   const [injectModalOpen, setInjectModalOpen] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState(null);
-  const [injectForm, setInjectForm] = useState({ event_type: 'adverse_media', severity: 'high' });
+  const [injectForm, setInjectForm] = useState({
+    event_type: 'adverse_media',
+    title: '',
+    text: '',
+  });
 
   const { data: entities = [], isLoading } = useQuery({
     queryKey: ['watchlist'],
@@ -21,8 +25,10 @@ export const AdminWatchlist = () => {
     mutationFn: apiClient.injectEvent,
     onSuccess: () => {
       setInjectModalOpen(false);
-      // In a real scenario, this would eventually trigger SSE `alert.new`
-      // which invalidates the alerts query.
+      setInjectForm({ event_type: 'adverse_media', title: '', text: '' });
+      // Invalidate alerts so the Alert Queue auto-refreshes
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-alerts'] });
     }
   });
 
@@ -33,15 +39,21 @@ export const AdminWatchlist = () => {
 
   const openInjectModal = (entity) => {
     setSelectedEntity(entity);
-    setInjectForm({ event_type: 'adverse_media', severity: 'high' });
+    setInjectForm({
+      event_type: 'adverse_media',
+      title: `Risk signal detected for ${entity.name}`,
+      text: `Automated system flagged ${entity.name} for compliance review.`,
+    });
     setInjectModalOpen(true);
   };
 
   const handleInjectSubmit = (e) => {
     e.preventDefault();
     injectMutation.mutate({
-      entity_id: selectedEntity.id,
-      ...injectForm
+      event_type: injectForm.event_type,
+      title: injectForm.title,
+      text: injectForm.text,
+      entity_hint: selectedEntity.name,  // backend matches by name
     });
   };
 
@@ -169,17 +181,26 @@ export const AdminWatchlist = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">Severity</label>
-                <select 
-                  value={injectForm.severity}
-                  onChange={(e) => setInjectForm({ ...injectForm, severity: e.target.value })}
+                <label className="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">Event Title</label>
+                <input
+                  type="text"
+                  value={injectForm.title}
+                  onChange={(e) => setInjectForm({ ...injectForm, title: e.target.value })}
                   className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 focus:border-brand-500 outline-none"
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                  <option value="critical">Critical</option>
-                </select>
+                  placeholder="e.g. Adverse media: fraud allegation"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 mb-1 uppercase tracking-wider">Event Details</label>
+                <textarea
+                  value={injectForm.text}
+                  onChange={(e) => setInjectForm({ ...injectForm, text: e.target.value })}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-sm text-slate-200 focus:border-brand-500 outline-none h-20 resize-none"
+                  placeholder="Describe the risk event in detail..."
+                  required
+                />
               </div>
 
               <div className="pt-4 flex justify-end gap-3">

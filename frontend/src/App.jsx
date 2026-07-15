@@ -18,7 +18,7 @@ function App() {
           <Route path="alerts" element={<AlertQueue />} />
           <Route path="timeline/:entityId?" element={<EntityTimeline />} />
           <Route path="sar/:id?" element={<SARReview />} />
-          <Route path="audit" element={<AuditTrail />} />
+          <Route path="audit/:entityId?" element={<AuditTrail />} />
           <Route path="watchlist" element={<AdminWatchlist />} />
           <Route path="alerts/:id/trace" element={<TraceView />} />
         </Route>

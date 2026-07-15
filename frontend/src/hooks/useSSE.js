@@ -41,12 +41,18 @@ export const useSSE = (url = '/api/v1/stream') => {
         // Invalidate specific queries based on event type to trigger React Query refetch
         if (type === 'alert.new' || type === 'alert.updated') {
           queryClient.invalidateQueries({ queryKey: ['alerts'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-alerts'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-audit-verify'] });
         }
         if (type === 'entity.updated') {
           queryClient.invalidateQueries({ queryKey: ['entity'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-entities'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-audit-verify'] });
         }
         if (type === 'sar.ready') {
           queryClient.invalidateQueries({ queryKey: ['sar'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-sars'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-audit-verify'] });
           addToast({
             type: 'sar',
             title: 'SAR Draft Ready',

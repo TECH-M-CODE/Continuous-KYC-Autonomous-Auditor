@@ -78,7 +78,7 @@ class NewsRSSAdapter(FeedAdapter):
     name = "news_rss"
     schedule_seconds = 300  # every 5 minutes
 
-    def fetch(self) -> list[IngestedEvent]:
+    async def fetch(self) -> list[IngestedEvent]:
         try:
             import feedparser
         except ImportError:
