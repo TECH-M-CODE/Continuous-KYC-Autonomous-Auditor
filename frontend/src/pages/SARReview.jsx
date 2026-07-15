@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { FileText, CheckCircle, XCircle, Edit3, BookOpen, MessageSquare, AlertTriangle, ChevronRight, Loader2, Save } from 'lucide-react';
 import { apiClient } from '../api/client';
@@ -7,16 +7,8 @@ import { EvidenceBundle } from '../components/EvidenceBundle';
 import clsx from 'clsx';
 
 export const SARReview = () => {
-  // Resolve a real SAR: prefer an :id route param, otherwise fall back to the most
-  // recent draft from the list. (The route is currently /sar with no param.)
-  const { id: routeId } = useParams();
-  const { data: sarList } = useQuery({
-    queryKey: ['sars'],
-    queryFn: () => apiClient.getSARs(),
-    enabled: !routeId,
-  });
-  const sarId = routeId || sarList?.[0]?.id || null;
-  const noSarAvailable = !routeId && Array.isArray(sarList) && sarList.length === 0;
+  const { id } = useParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   
   const [isEditing, setIsEditing] = useState(false);
@@ -25,6 +17,20 @@ export const SARReview = () => {
   const [question, setQuestion] = useState('');
   const [selectedCitation, setSelectedCitation] = useState(null);
   const [optimisticAudit, setOptimisticAudit] = useState([]);
+
+  // If no ID is provided, fetch the latest SAR and redirect
+  const { data: latestSars, isLoading: isLatestLoading } = useQuery({
+    queryKey: ['sars', 'latest'],
+    queryFn: () => apiClient.getSARs({ limit: 1 }),
+    enabled: !id,
+    onSuccess: (data) => {
+      if (data && data.items && data.items.length > 0) {
+        navigate(`/sar/${data.items[0].id}`, { replace: true });
+      }
+    }
+  });
+
+  const sarId = id; // use the param id
 
   const { data: sar, isLoading } = useQuery({
     queryKey: ['sar', sarId],
@@ -89,23 +95,24 @@ export const SARReview = () => {
     }
   });
 
-  if (noSarAvailable) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center text-center gap-3 text-slate-400">
-        <FileText className="w-10 h-10 text-slate-600" />
-        <h2 className="text-lg font-semibold text-slate-200">No SAR drafts pending</h2>
-        <p className="text-sm max-w-md">
-          SAR drafts are generated automatically when an entity crosses the critical risk
-          threshold. Trigger a critical alert (or run the money-laundering demo scenario) and
-          one will appear here for review.
-        </p>
-      </div>
-    );
-  }
-
-  if (!sarId || isLoading || !sar) {
+  if (isLatestLoading || isLoading || (!sarId && latestSars?.items?.length === 0)) {
+    if (!sarId && latestSars?.items?.length === 0) {
+      return (
+        <div className="flex h-full flex-col items-center justify-center text-center gap-3 text-slate-400">
+          <FileText className="w-10 h-10 text-slate-600" />
+          <h2 className="text-lg font-semibold text-slate-200">No SAR drafts pending</h2>
+          <p className="text-sm max-w-md">
+            SAR drafts are generated automatically when an entity crosses the critical risk
+            threshold. Trigger a critical alert (or run the money-laundering demo scenario) and
+            one will appear here for review.
+          </p>
+        </div>
+      );
+    }
     return <div className="flex h-full items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-brand-500" /></div>;
   }
+
+  if (!sar) return null;
 
   return (
     <div className="flex flex-col h-full space-y-6">

@@ -61,8 +61,16 @@ class TransactionReplayAdapter(FeedAdapter):
         detectors: list[Detector] | None = None,
         source_path: Path = TXN_SAMPLE_PATH,
     ) -> None:
+        self._disabled = False
+
         if not source_path.exists():
-            raise FileNotFoundError(f"{source_path} not found; run data/prep/prep_transactions.py first")
+            log.warning(
+                "TransactionReplayAdapter: %s not found — adapter disabled. "
+                "Run data/prep/prep_transactions.py to enable transaction replay.",
+                source_path,
+            )
+            self._disabled = True
+            return
 
         self._seconds_per_simulated_day = seconds_per_simulated_day
         self._history_window_hours = history_window_hours
@@ -95,6 +103,9 @@ class TransactionReplayAdapter(FeedAdapter):
         )
 
     async def fetch(self) -> list[IngestedEvent]:
+        if self._disabled:
+            return []  # parquet not ready yet — silently skip
+
         window_start = self._virtual_clock
         window_end = self._advance_virtual_clock()
         self._virtual_clock = window_end

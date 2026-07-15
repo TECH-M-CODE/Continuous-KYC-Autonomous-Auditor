@@ -19,6 +19,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy backend codebase
 COPY app/ app/
+COPY demo/ demo/
 COPY policy.yaml .
 COPY data/ data/
 

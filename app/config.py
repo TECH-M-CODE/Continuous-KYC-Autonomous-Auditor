@@ -34,7 +34,12 @@ class Settings(BaseSettings):
     chroma_persist_dir: str = "./data/chroma"
     redis_url: str = "redis://localhost:6379"
 
-    # AI / LLM
+    # AI / LLM — priority: NVIDIA → Gemini → Mock
+    # NVIDIA NIM (https://build.nvidia.com → Get API Key)
+    nvidia_api_key: str = ""
+    nvidia_primary_model: str = "meta/llama-3.3-70b-instruct"
+    nvidia_fallback_model: str = "meta/llama-3.1-8b-instruct"
+    # Google Gemini (fallback when nvidia_api_key is blank)
     google_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"
     mask_pii_before_llm: bool = True
