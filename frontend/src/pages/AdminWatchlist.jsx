@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { ShieldAlert, Zap, Search, ToggleLeft, ToggleRight, Loader2, X } from 'lucide-react';
 import { StatusBadge } from '../components/StatusBadge';
 import { DetectionHealth } from '../components/DetectionHealth';
@@ -89,7 +90,9 @@ export const AdminWatchlist = () => {
                   {entities.map(entity => (
                     <tr key={entity.id} className="hover:bg-slate-800/30 transition-colors">
                       <td className="px-6 py-4">
-                        <div className="font-medium text-slate-200">{entity.name}</div>
+                        <Link to={`/timeline/${entity.id}`} className="font-medium text-slate-200 hover:text-brand-400 transition-colors">
+                          {entity.name}
+                        </Link>
                         <div className="text-xs text-slate-500 font-mono mt-0.5">{entity.id}</div>
                       </td>
                       <td className="px-6 py-4 text-slate-300">{entity.type}</td>

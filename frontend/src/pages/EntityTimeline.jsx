@@ -1,19 +1,35 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { StatusBadge } from '../components/StatusBadge';
 import { Newspaper, ArrowRightLeft, Building2, MapPin, Loader2 } from 'lucide-react';
 import { apiClient } from '../api/client';
 
 export const EntityTimeline = () => {
-  // Using a hardcoded ID matching the backend mock data
-  const entityId = 'entity-1';
-  
-  const { data: entity, isLoading } = useQuery({
-    queryKey: ['entity', entityId],
-    queryFn: () => apiClient.getEntityTimeline(entityId)
+  const { entityId } = useParams();
+  const navigate = useNavigate();
+
+  // No entity in the URL yet (e.g. landed on the bare /timeline nav link) —
+  // fall back to the first entity in the watchlist and redirect into its URL.
+  const { data: entities = [] } = useQuery({
+    queryKey: ['watchlist'],
+    queryFn: apiClient.getWatchlist,
+    enabled: !entityId,
   });
 
-  if (isLoading) {
+  useEffect(() => {
+    if (!entityId && entities.length > 0) {
+      navigate(`/timeline/${entities[0].id}`, { replace: true });
+    }
+  }, [entityId, entities, navigate]);
+
+  const { data: entity, isLoading } = useQuery({
+    queryKey: ['entity', entityId],
+    queryFn: () => apiClient.getEntityTimeline(entityId),
+    enabled: !!entityId,
+  });
+
+  if (isLoading || !entityId) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <Loader2 className="w-8 h-8 text-brand-400 animate-spin" />

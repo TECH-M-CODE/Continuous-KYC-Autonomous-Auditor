@@ -16,7 +16,7 @@ function App() {
         <Route path="/" element={<Layout />}>
           <Route index element={<Dashboard />} />
           <Route path="alerts" element={<AlertQueue />} />
-          <Route path="timeline" element={<EntityTimeline />} />
+          <Route path="timeline/:entityId?" element={<EntityTimeline />} />
           <Route path="sar" element={<SARReview />} />
           <Route path="audit" element={<AuditTrail />} />
           <Route path="watchlist" element={<AdminWatchlist />} />

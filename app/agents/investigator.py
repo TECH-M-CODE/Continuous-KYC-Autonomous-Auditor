@@ -55,7 +55,9 @@ def investigator(state: AuditorState, *, gateway) -> AuditorState:
         screening_matches=state.get("screening_matches", []),
     )
 
-    result = asyncio.get_event_loop().run_until_complete(
+    # See resolver.py's comment: this node runs in asyncio.to_thread()'s worker
+    # thread, which has no event loop -- asyncio.run() creates one for this call.
+    result = asyncio.run(
         gateway.complete(prompt, schema=ClassifyEventResult, task_tag="classify_event")
     )
 
@@ -94,6 +96,7 @@ def investigator(state: AuditorState, *, gateway) -> AuditorState:
     score_delta_val = 0.0
     new_score = state.get("entity_risk_score", 0.0)
     risk_band = "UNKNOWN"
+    risk_event_id: str | None = None
 
     try:
         policy = get_policy()
@@ -108,7 +111,7 @@ def investigator(state: AuditorState, *, gateway) -> AuditorState:
         )
 
         with UnitOfWork() as uow:
-            new_score = apply_delta(
+            risk_event = apply_delta(
                 entity_id=entity_id,
                 score_delta=score_delta,
                 uow=uow,
@@ -117,6 +120,8 @@ def investigator(state: AuditorState, *, gateway) -> AuditorState:
                 reasoning=evidence_summary,
                 policy=policy,
             )
+            new_score = risk_event.score_after
+            risk_event_id = risk_event.id
             # Read the resolved band back
             entity = uow.entities.get(entity_id)
             risk_band = entity.risk_band if entity else "LOW"
@@ -181,6 +186,7 @@ def investigator(state: AuditorState, *, gateway) -> AuditorState:
     state["score_delta"] = score_delta_val
     state["new_risk_score"] = new_score
     state["risk_band"] = risk_band
+    state["risk_event_id"] = risk_event_id
     state["evidence"] = evidence
     state["investigation_summary"] = evidence_summary
     state["trace"] = tb

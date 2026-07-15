@@ -1,14 +1,13 @@
-"""Entities router: Sprint 1 returns hardcoded data matching docs/api_contract.md #2."""
+"""Entities router — Sprint 4: real DB reads replacing the Sprint 1 mock store."""
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 
 from app.api.deps import PaginationParams, pagination_params
+from app.repositories.unit_of_work import UnitOfWork
 from app.schemas import APIResponse, PaginatedData, paginate, success_response
 from app.schemas.entities import (
-    DecisionEdgeDTO,
-    DecisionNodeDTO,
     EntityDetailDTO,
     EntityGraphDTO,
     EntitySummaryDTO,
@@ -18,103 +17,13 @@ from app.schemas.entities import (
 
 router = APIRouter(prefix="/entities", tags=["entities"])
 
-_MOCK_ENTITIES: dict[str, EntityDetailDTO] = {
-    "entity-1": EntityDetailDTO(
-        id="entity-1",
-        name="Acme Import Export Ltd",
-        type="COMPANY",
-        risk_score=78.5,
-        risk_band="HIGH",
-        jurisdiction="Cyprus",
-        peps=[
-            PersonDTO(
-                id="person-1",
-                full_name="Viktor Petrov",
-                role="DIRECTOR",
-                is_pep=True,
-                nationality="Russia",
-                risk_score=91.0,
-                risk_band="CRITICAL",
-            )
-        ],
-        recent_events=[
-            RiskEventDTO(
-                id="event-1",
-                event_category="ADVERSE_MEDIA",
-                severity="HIGH",
-                score_delta=15.0,
-                reasoning="Entity named in adverse media report regarding sanctioned counterparties.",
-                created_at="2026-07-10T09:30:00Z",
-            ),
-            RiskEventDTO(
-                id="event-2",
-                event_category="PEP_UPDATE",
-                severity="CRITICAL",
-                score_delta=25.0,
-                reasoning="Linked director confirmed as Politically Exposed Person.",
-                created_at="2026-07-12T14:00:00Z",
-            ),
-        ],
-    ),
-    "entity-2": EntityDetailDTO(
-        id="entity-2",
-        name="Globex Trading Co",
-        type="COMPANY",
-        risk_score=12.0,
-        risk_band="LOW",
-        jurisdiction="Singapore",
-        peps=[],
-        recent_events=[],
-    ),
-    "entity-3": EntityDetailDTO(
-        id="entity-3",
-        name="Elena Kowalski",
-        type="PERSON",
-        risk_score=44.0,
-        risk_band="MEDIUM",
-        jurisdiction="Poland",
-        peps=[],
-        recent_events=[
-            RiskEventDTO(
-                id="event-3",
-                event_category="TRANSACTION",
-                severity="MEDIUM",
-                score_delta=8.0,
-                reasoning="Unusual transaction velocity detected against baseline.",
-                created_at="2026-07-13T11:15:00Z",
-            )
-        ],
-    ),
-}
+# The domain model doesn't yet distinguish person-type entities (seed_entities.py
+# only ever creates corporate records), so every row is reported as a COMPANY.
+_ENTITY_TYPE = "COMPANY"
 
-_MOCK_GRAPHS: dict[str, EntityGraphDTO] = {
-    "entity-1": EntityGraphDTO(
-        nodes=[
-            DecisionNodeDTO(
-                id="node-1",
-                type="news",
-                data={"label": "Adverse media detected", "date": "2026-07-10T09:30:00Z"},
-                position={"x": 0, "y": 0},
-            ),
-            DecisionNodeDTO(
-                id="node-2",
-                type="match",
-                data={"label": "Fuzzy match: Viktor Petrov (PEP list)", "score_change": 25.0, "date": "2026-07-12T14:00:00Z"},
-                position={"x": 250, "y": 0},
-            ),
-            DecisionNodeDTO(
-                id="node-3",
-                type="policy",
-                data={"label": "Risk band escalated to HIGH", "score_change": 40.0, "date": "2026-07-12T14:05:00Z"},
-                position={"x": 500, "y": 0},
-            ),
-        ],
-        edges=[
-            DecisionEdgeDTO(id="edge-1", source="node-1", target="node-2", animated=True),
-            DecisionEdgeDTO(id="edge-2", source="node-2", target="node-3", animated=True, label="score +40"),
-        ],
-    ),
-}
+# Graph endpoint has no backing DB table yet (see docs discussion in alerts.py's
+# DecisionTrace) — out of scope for the entities/list mock purge, left unwired.
+_MOCK_GRAPHS: dict[str, EntityGraphDTO] = {}
 
 
 def _not_found(request: Request, entity_id: str) -> JSONResponse:
@@ -131,36 +40,87 @@ def _not_found(request: Request, entity_id: str) -> JSONResponse:
     )
 
 
+def _entity_to_summary(entity) -> EntitySummaryDTO:
+    return EntitySummaryDTO(
+        id=entity.id,
+        name=entity.name,
+        type=_ENTITY_TYPE,
+        risk_score=entity.risk_score,
+        risk_band=entity.risk_band,
+    )
+
+
+def _entity_to_detail(entity, uow: UnitOfWork) -> EntityDetailDTO:
+    persons = [
+        PersonDTO(
+            id=str(p.id),
+            full_name=p.person_name,
+            role=p.role,
+            is_pep=False,  # no per-person PEP flag in the domain model yet
+            nationality=None,
+            risk_score=entity.risk_score,  # individual scoring not modeled; inherit parent
+            risk_band=entity.risk_band,
+        )
+        for p in entity.persons
+    ]
+
+    risk_events = sorted(
+        uow.risk_events.list(entity_id=entity.id),
+        key=lambda e: e.created_at,
+        reverse=True,
+    )
+    recent_events = [
+        RiskEventDTO(
+            id=re.id,
+            event_category=re.event_category or "UNKNOWN",
+            severity=re.severity,
+            score_delta=re.delta,
+            reasoning=re.reasoning or "",
+            created_at=re.created_at,
+        )
+        for re in risk_events
+    ]
+
+    return EntityDetailDTO(
+        id=entity.id,
+        name=entity.name,
+        type=_ENTITY_TYPE,
+        risk_score=entity.risk_score,
+        risk_band=entity.risk_band,
+        jurisdiction=entity.jurisdiction or "",
+        peps=persons,
+        recent_events=recent_events,
+    )
+
+
 @router.get("", response_model=APIResponse[PaginatedData[EntitySummaryDTO]])
 async def list_entities(
     pagination: PaginationParams = Depends(pagination_params),
     risk_band: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
 ) -> APIResponse[PaginatedData[EntitySummaryDTO]]:
-    entities = list(_MOCK_ENTITIES.values())
+    with UnitOfWork() as uow:
+        entities = uow.entities.list(name=search or None)
 
-    if risk_band:
-        entities = [e for e in entities if e.risk_band == risk_band.upper()]
-    if search:
-        entities = [e for e in entities if search.lower() in e.name.lower()]
+        # risk_band isn't natively supported by the repo; filter in-memory like alerts.py does for priority.
+        if risk_band:
+            entities = [e for e in entities if e.risk_band == risk_band.upper()]
 
-    total = len(entities)
-    start = (pagination.page - 1) * pagination.limit
-    page_items = entities[start : start + pagination.limit]
+        total = len(entities)
+        start = (pagination.page - 1) * pagination.limit
+        page_items = entities[start: start + pagination.limit]
+        summaries = [_entity_to_summary(e) for e in page_items]
 
-    summaries = [
-        EntitySummaryDTO(id=e.id, name=e.name, type=e.type, risk_score=e.risk_score, risk_band=e.risk_band)
-        for e in page_items
-    ]
     return success_response(paginate(summaries, total=total, page=pagination.page, page_size=pagination.limit))
 
 
 @router.get("/{entity_id}", response_model=APIResponse[EntityDetailDTO])
 async def get_entity(entity_id: str, request: Request):
-    entity = _MOCK_ENTITIES.get(entity_id)
-    if entity is None:
-        return _not_found(request, entity_id)
-    return success_response(entity)
+    with UnitOfWork() as uow:
+        entity = uow.entities.get(entity_id)
+        if entity is None:
+            return _not_found(request, entity_id)
+        return success_response(_entity_to_detail(entity, uow))
 
 
 @router.get("/{entity_id}/graph", response_model=APIResponse[EntityGraphDTO])

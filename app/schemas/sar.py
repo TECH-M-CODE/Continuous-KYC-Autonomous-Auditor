@@ -2,7 +2,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 SARStatus = Literal["DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED", "FILED"]
 
@@ -46,3 +46,11 @@ class SARUpdateRequest(BaseModel):
 class SARDecisionRequest(BaseModel):
     decision: Literal["APPROVE", "REJECT"]
     comments: str
+
+    @model_validator(mode="after")
+    def _require_comments_on_reject(self) -> "SARDecisionRequest":
+        # A rejection with no documented reason is a compliance gap, not a
+        # valid decision -- previously this endpoint accepted it silently.
+        if self.decision == "REJECT" and not self.comments.strip():
+            raise ValueError("comments is required when rejecting a SAR")
+        return self
