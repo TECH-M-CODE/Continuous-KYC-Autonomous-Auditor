@@ -22,7 +22,7 @@ export const AlertQueue = () => {
   const actionMutation = useMutation({
     mutationFn: apiClient.actionAlert,
     onSuccess: () => {
-      queryClient.invalidateQueries(['alerts']);
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
     }
   });
 
@@ -50,16 +50,16 @@ export const AlertQueue = () => {
             initial={{ opacity: 0, y: -50, scale: 0.9 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -20, scale: 0.9 }}
-            className="absolute top-6 left-1/2 transform -translate-x-1/2 z-50 bg-slate-800 border border-slate-700 shadow-2xl rounded-xl p-4 flex items-start gap-4 min-w-[320px]"
+            className="absolute top-6 left-1/2 transform -translate-x-1/2 z-50 glass-panel bg-white/80 p-4 flex items-start gap-4 min-w-[320px]"
           >
-            <div className="mt-1 bg-red-500/20 p-2 rounded-full">
-              <Shield className="w-5 h-5 text-red-400" />
+            <div className="mt-1 bg-red-100 p-2 rounded-full border border-red-200 shadow-inner">
+              <Shield className="w-5 h-5 text-red-500" />
             </div>
             <div className="flex-1">
-              <h4 className="text-sm font-semibold text-slate-100">New {toast.priority} Alert</h4>
-              <p className="text-xs text-slate-400 mt-1">{toast.entity_name} — {toast.status}</p>
+              <h4 className="text-sm font-bold text-slate-800">New {toast.priority} Alert</h4>
+              <p className="text-xs font-medium text-slate-600 mt-1">{toast.entity_name} — {toast.status}</p>
             </div>
-            <button onClick={() => setToast(null)} className="text-slate-500 hover:text-slate-300">
+            <button onClick={() => setToast(null)} className="text-slate-400 hover:text-slate-600">
               <X className="w-4 h-4" />
             </button>
           </motion.div>
@@ -68,19 +68,19 @@ export const AlertQueue = () => {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-100">Alert Queue</h1>
-          <p className="text-sm text-slate-400 mt-1">Review and triage incoming risk alerts.</p>
+          <h1 className="text-2xl font-bold text-slate-800 drop-shadow-sm">Alert Queue</h1>
+          <p className="text-sm text-slate-500 mt-1 font-medium">Review and triage incoming risk alerts.</p>
         </div>
         
         {/* Filters */}
-        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-lg p-1">
-          <Filter className="w-4 h-4 text-slate-500 ml-2 mr-1" />
+        <div className="flex items-center gap-2 glass-panel !rounded-xl !p-1.5 shadow-sm">
+          <Filter className="w-4 h-4 text-brand-500 ml-2 mr-1" />
           {['all', 'critical', 'high', 'medium'].map(band => (
             <button
               key={band}
               onClick={() => setFilter(band)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium capitalize transition-colors ${
-                filter === band ? 'bg-slate-800 text-slate-200' : 'text-slate-400 hover:text-slate-300 hover:bg-slate-800/50'
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold capitalize transition-all ${
+                filter === band ? 'bg-gradient-to-r from-brand-500 to-brand-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-800 hover:bg-white/60'
               }`}
             >
               {band}
@@ -90,73 +90,73 @@ export const AlertQueue = () => {
       </div>
 
       {/* Table */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl flex-1 overflow-hidden flex flex-col">
+      <div className="glass-panel flex-1 overflow-hidden flex flex-col">
         {isLoading ? (
           <div className="flex-1 flex items-center justify-center">
-            <Loader2 className="w-8 h-8 text-brand-400 animate-spin" />
+            <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="bg-slate-800/50 text-slate-400">
+              <thead className="bg-white/40 text-slate-600 border-b border-white/50 backdrop-blur-md">
                 <tr>
-                  <th className="px-6 py-4 font-medium">Entity</th>
-                  <th className="px-6 py-4 font-medium">Priority</th>
-                  <th className="px-6 py-4 font-medium">Status</th>
-                  <th className="px-6 py-4 font-medium">Time (UTC)</th>
-                  <th className="px-6 py-4 font-medium text-right">Actions</th>
+                  <th className="px-6 py-4 font-bold tracking-wide">Entity</th>
+                  <th className="px-6 py-4 font-bold tracking-wide">Priority</th>
+                  <th className="px-6 py-4 font-bold tracking-wide">Status</th>
+                  <th className="px-6 py-4 font-bold tracking-wide">Time (UTC)</th>
+                  <th className="px-6 py-4 font-bold tracking-wide text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/50">
+              <tbody className="divide-y divide-white/40">
                 <AnimatePresence initial={false}>
                   {filteredAlerts.map(alert => (
                     <motion.tr 
                       key={alert.id}
                       layout
-                      initial={{ opacity: 0, backgroundColor: 'rgba(59, 130, 246, 0.1)' }}
+                      initial={{ opacity: 0, backgroundColor: 'rgba(139, 92, 246, 0.1)' }}
                       animate={{ opacity: 1, backgroundColor: 'transparent' }}
                       exit={{ opacity: 0, x: -20 }}
                       transition={{ duration: 0.3 }}
-                      className="hover:bg-slate-800/20 group"
+                      className="hover:bg-white/40 group transition-colors"
                     >
                       <td className="px-6 py-4">
                         <Link
                           to={`/timeline/${alert.entity_id || ''}`}
-                          className="font-medium text-slate-200 hover:text-brand-400 transition-colors flex items-center gap-1.5"
+                          className="font-bold text-slate-800 hover:text-brand-600 transition-colors flex items-center gap-1.5"
                         >
-                          <Activity className="w-3.5 h-3.5 text-slate-500" />
+                          <Activity className="w-4 h-4 text-brand-500" />
                           {alert.entity_name || alert.entity_id}
                         </Link>
-                        <div className="text-xs text-slate-500 font-mono mt-0.5">{alert.id}</div>
+                        <div className="text-xs text-slate-500 font-mono mt-0.5 font-medium">{alert.id}</div>
                       </td>
                       <td className="px-6 py-4">
                         <StatusBadge band={alert.priority?.toLowerCase()} />
                       </td>
                       <td className="px-6 py-4">
-                        <span className="text-slate-400">{alert.status}</span>
+                        <span className="text-slate-600 font-semibold">{alert.status}</span>
                       </td>
-                      <td className="px-6 py-4 text-slate-400 text-xs">
+                      <td className="px-6 py-4 text-slate-500 font-medium text-xs">
                         {new Date(alert.created_at).toLocaleTimeString()}
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                           <Link 
                             to={`/alerts/${alert.id}/trace`}
-                            className="flex items-center gap-1 px-3 py-1.5 bg-slate-800 hover:bg-brand-500/20 text-brand-400 border border-slate-700 hover:border-brand-500/50 rounded-md transition-colors text-xs font-semibold mr-2"
+                            className="flex items-center gap-1.5 px-4 py-2 bg-white/60 hover:bg-white/90 text-brand-600 border border-white/80 hover:border-brand-300 rounded-lg shadow-sm transition-all text-xs font-bold mr-2"
                           >
-                            <GitMerge className="w-3.5 h-3.5" />
+                            <GitMerge className="w-4 h-4" />
                             Why?
                           </Link>
                           <button 
                             onClick={() => handleAction(alert.id, 'DISMISS')}
                             disabled={actionMutation.isPending}
-                            className="p-1.5 text-slate-400 hover:text-green-400 hover:bg-green-400/10 rounded-md transition-colors" title="Dismiss">
+                            className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-100/50 rounded-lg transition-colors bg-white/40 shadow-sm border border-white/50" title="Dismiss">
                             <Check className="w-4 h-4" />
                           </button>
                           <button 
                             onClick={() => handleAction(alert.id, 'ESCALATE')}
                             disabled={actionMutation.isPending}
-                            className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-md transition-colors" title="Escalate">
+                            className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-100/50 rounded-lg transition-colors bg-white/40 shadow-sm border border-white/50" title="Escalate">
                             <Shield className="w-4 h-4" />
                           </button>
                         </div>

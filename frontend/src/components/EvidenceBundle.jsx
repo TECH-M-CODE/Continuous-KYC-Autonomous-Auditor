@@ -5,8 +5,8 @@ import { StatusBadge } from './StatusBadge';
 export const EvidenceBundle = ({ evidence = [] }) => {
   if (!evidence || evidence.length === 0) {
     return (
-      <div className="p-4 bg-slate-900 rounded-lg border border-slate-800 text-center">
-        <p className="text-sm text-slate-500">No evidence items available.</p>
+      <div className="p-5 glass-panel text-center">
+        <p className="text-sm font-semibold text-slate-500">No evidence items available.</p>
       </div>
     );
   }
@@ -23,10 +23,10 @@ export const EvidenceBundle = ({ evidence = [] }) => {
   );
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {sortedEvidence.map((item, idx) => (
-        <div key={idx} className="p-4 bg-slate-900 rounded-lg border border-slate-800 flex gap-4">
-          <div className="w-10 h-10 shrink-0 bg-slate-800 rounded flex items-center justify-center text-slate-400">
+        <div key={idx} className="p-5 glass-panel flex gap-4 hover:bg-white/40 transition-colors shadow-sm">
+          <div className="w-10 h-10 shrink-0 bg-white/60 rounded-xl flex items-center justify-center text-brand-500 shadow-sm border border-white/80">
             {item.source === 'Reuters' || item.source.includes('Media') ? (
               <FileText className="w-5 h-5" />
             ) : item.source.includes('SAML') ? (
@@ -37,11 +37,11 @@ export const EvidenceBundle = ({ evidence = [] }) => {
           </div>
           
           <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-semibold text-brand-400 uppercase tracking-wider">{item.source}</span>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-bold text-brand-600 uppercase tracking-wider">{item.source}</span>
               <StatusBadge status={item.relevance.toLowerCase()} label={item.relevance} />
             </div>
-            <p className="text-sm text-slate-200 mt-2 italic border-l-2 border-slate-700 pl-3">
+            <p className="text-sm text-slate-700 mt-2 italic border-l-2 border-brand-200 pl-3 font-medium">
               "{item.snippet}"
             </p>
           </div>

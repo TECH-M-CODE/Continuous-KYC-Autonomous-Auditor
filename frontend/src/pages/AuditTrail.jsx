@@ -49,11 +49,11 @@ export const AuditTrail = () => {
     <div className="flex flex-col h-full space-y-6 max-w-5xl mx-auto w-full">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-100 flex items-center gap-2">
-            <History className="w-6 h-6 text-brand-400" />
+          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2 drop-shadow-sm">
+            <History className="w-6 h-6 text-brand-500" />
             Immutable Audit Trail
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-slate-500 mt-1 font-medium">
             Cryptographically verifiable sequence of system actions.
           </p>
         </div>
@@ -64,7 +64,7 @@ export const AuditTrail = () => {
             <select
               value={entityId}
               onChange={(e) => navigate(`/audit/${e.target.value}`)}
-              className="bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-200 focus:border-brand-500 outline-none"
+              className="glass-input px-3 py-1.5 text-sm text-slate-800 font-semibold"
             >
               {allEntities.map(e => (
                 <option key={e.id} value={e.id}>{e.name}</option>
@@ -77,62 +77,62 @@ export const AuditTrail = () => {
 
       {/* Entity context banner */}
       {currentEntity && (
-        <div className="bg-slate-900 border border-slate-800 rounded-lg px-4 py-3 flex items-center gap-4">
-          <span className="text-xs text-slate-500 font-mono">{currentEntity.id}</span>
-          <span className="text-slate-300 font-medium">{currentEntity.name}</span>
-          <span className={`ml-auto text-xs font-semibold px-2 py-0.5 rounded-full border ${
-            currentEntity.risk_band === 'CRITICAL' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
-            currentEntity.risk_band === 'HIGH' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
-            'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+        <div className="glass-panel px-5 py-3 flex items-center gap-4">
+          <span className="text-xs text-slate-500 font-mono font-medium">{currentEntity.id}</span>
+          <span className="text-slate-800 font-bold">{currentEntity.name}</span>
+          <span className={`ml-auto text-xs font-bold px-3 py-1 rounded-full border shadow-sm ${
+            currentEntity.risk_band === 'CRITICAL' ? 'bg-red-100 text-red-600 border-red-200' :
+            currentEntity.risk_band === 'HIGH' ? 'bg-orange-100 text-orange-600 border-orange-200' :
+            'bg-emerald-100 text-emerald-600 border-emerald-200'
           }`}>
             Risk: {currentEntity.risk_band} ({currentEntity.risk_score})
           </span>
         </div>
       )}
 
-      <div className="bg-slate-900 border border-slate-800 rounded-xl flex-1 overflow-hidden flex flex-col">
+      <div className="glass-panel flex-1 overflow-hidden flex flex-col">
         {isLoading ? (
           <div className="flex-1 flex items-center justify-center">
-            <Loader2 className="w-8 h-8 text-brand-400 animate-spin" />
+            <Loader2 className="w-8 h-8 text-brand-500 animate-spin" />
           </div>
         ) : auditLogs.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">
+          <div className="flex-1 flex items-center justify-center text-slate-500 text-sm font-semibold">
             No audit log entries for this entity yet.
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm whitespace-nowrap font-mono">
-              <thead className="bg-slate-800/50 text-slate-400">
+              <thead className="bg-white/40 text-slate-600 border-b border-white/50 backdrop-blur-sm">
                 <tr>
-                  <th className="px-6 py-4 font-medium">Seq</th>
-                  <th className="px-6 py-4 font-medium">Time (UTC)</th>
-                  <th className="px-6 py-4 font-medium">Actor</th>
-                  <th className="px-6 py-4 font-medium">Action</th>
-                  <th className="px-6 py-4 font-medium">Prev Hash</th>
-                  <th className="px-6 py-4 font-medium">Entry Hash</th>
+                  <th className="px-6 py-4 font-bold">Seq</th>
+                  <th className="px-6 py-4 font-bold">Time (UTC)</th>
+                  <th className="px-6 py-4 font-bold">Actor</th>
+                  <th className="px-6 py-4 font-bold">Action</th>
+                  <th className="px-6 py-4 font-bold">Prev Hash</th>
+                  <th className="px-6 py-4 font-bold">Entry Hash</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/50">
+              <tbody className="divide-y divide-white/40">
                 {auditLogs.map((entry, idx) => (
-                  <tr key={entry.id} className="hover:bg-slate-800/30">
-                    <td className="px-6 py-4 text-brand-400">{entry.seq}</td>
-                    <td className="px-6 py-4 text-slate-400 text-xs">
+                  <tr key={entry.id} className="hover:bg-white/40 transition-colors">
+                    <td className="px-6 py-4 text-brand-600 font-bold">{entry.seq}</td>
+                    <td className="px-6 py-4 text-slate-500 text-xs font-semibold">
                       {new Date(entry.created_at || entry.timestamp).toISOString().replace('T', ' ').substring(0, 19)}
                     </td>
-                    <td className="px-6 py-4 text-slate-300">
-                      <span className={entry.actor === 'human' ? 'text-emerald-400' : 'text-purple-400'}>
+                    <td className="px-6 py-4 text-slate-700 font-bold">
+                      <span className={entry.actor === 'human' ? 'text-emerald-600' : 'text-purple-600'}>
                         {entry.actor}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-slate-200 font-bold text-xs">{entry.action}</td>
-                    <td className="px-6 py-4 text-slate-500 text-xs">
+                    <td className="px-6 py-4 text-slate-800 font-bold text-xs">{entry.action}</td>
+                    <td className="px-6 py-4 text-slate-500 text-xs font-medium">
                       {idx === 0 ? (
                         <span className="opacity-50">{entry.prev_hash || entry.previous_hash}</span>
                       ) : (
-                        <span className="text-green-500/70">← {(entry.prev_hash || entry.previous_hash || '').substring(0, 8)}</span>
+                        <span className="text-emerald-600">← {(entry.prev_hash || entry.previous_hash || '').substring(0, 8)}</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-slate-400 text-xs">
+                    <td className="px-6 py-4 text-slate-500 text-xs font-medium">
                       {entry.entry_hash}
                     </td>
                   </tr>

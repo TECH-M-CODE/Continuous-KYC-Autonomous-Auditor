@@ -1,21 +1,23 @@
 @import "tailwindcss";
 
 @theme {
-  --color-brand-50: #f4f7fa;
-  --color-brand-100: #e5edf5;
-  --color-brand-200: #ccdeea;
-  --color-brand-300: #a3c4dd;
-  --color-brand-400: #74a2cc;
-  --color-brand-500: #5185b8;
-  --color-brand-600: #3f6aa0;
-  --color-brand-700: #335582;
-  --color-brand-800: #2d486c;
-  --color-brand-900: #283e5a;
+  /* Purple/Lavender */
+  --color-brand-50: #f5f3ff;
+  --color-brand-100: #ede9fe;
+  --color-brand-200: #ddd6fe;
+  --color-brand-300: #c4b5fd;
+  --color-brand-400: #a78bfa;
+  --color-brand-500: #8b5cf6;
+  --color-brand-600: #7c3aed;
+  --color-brand-700: #6d28d9;
+  --color-brand-800: #5b21b6;
+  --color-brand-900: #4c1d95;
   
-  --color-bg-dark: #0f172a;
-  --color-surface: #1e293b;
-  --color-surface-hover: #334155;
-  --color-border: #334155;
+  /* Beige / Glassmorphism base */
+  --color-bg-base: #f3eee8;
+  --color-surface: rgba(255, 255, 255, 0.45);
+  --color-surface-hover: rgba(255, 255, 255, 0.6);
+  --color-border: rgba(255, 255, 255, 0.6);
   
   --color-band-critical: #ef4444;
   --color-band-high: #f97316;
@@ -25,6 +27,24 @@
 
 @layer base {
   body {
-    @apply bg-bg-dark text-slate-200 antialiased;
+    @apply bg-bg-base text-slate-800 antialiased;
+    background: radial-gradient(circle at 10% 20%, #fdfcfb 0%, #e2d1c3 100%);
+    min-height: 100vh;
+  }
+}
+
+/* Glassmorphism panel utility */
+@layer utilities {
+  .glass-panel {
+    @apply bg-surface backdrop-blur-xl border border-border shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] rounded-3xl;
+  }
+  .glass-panel-hover {
+    @apply hover:bg-surface-hover hover:shadow-[0_8px_32px_0_rgba(31,38,135,0.1)] transition-all duration-300;
+  }
+  .glass-button {
+    @apply bg-white/50 backdrop-blur-md border border-white/60 shadow-sm rounded-full font-medium transition-all duration-200 hover:bg-white/70 hover:shadow-md;
+  }
+  .glass-input {
+    @apply bg-white/40 backdrop-blur-sm border border-white/50 rounded-xl focus:ring-2 focus:ring-brand-400 focus:bg-white/60 outline-none transition-all duration-200;
   }
 }

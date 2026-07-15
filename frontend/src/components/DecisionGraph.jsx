@@ -90,7 +90,7 @@ export const DecisionGraph = ({ trace }) => {
   }, []);
 
   return (
-    <div className="flex h-full w-full relative bg-slate-950">
+    <div className="flex h-full w-full relative bg-transparent">
       <div className="flex-1 relative">
         <ReactFlow
           nodes={nodes}
@@ -102,18 +102,18 @@ export const DecisionGraph = ({ trace }) => {
           fitView
           minZoom={0.5}
           maxZoom={1.5}
-          className="bg-slate-950"
+          className="bg-transparent"
         >
-          <Background color="#1e293b" gap={16} />
-          <Controls className="bg-slate-800 border-slate-700 fill-slate-300" />
+          <Background color="#cbd5e1" gap={16} />
+          <Controls className="!bg-white/80 !border-white/60 !fill-slate-600 shadow-sm backdrop-blur-md" />
           
           {trace.counterfactual && (
             <Panel position="bottom-center" className="mb-4">
-              <div className="bg-slate-800 border border-slate-700 text-slate-300 px-6 py-3 rounded-lg shadow-xl max-w-2xl text-sm flex items-start gap-3">
-                <Info className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
+              <div className="glass-panel px-6 py-4 shadow-xl max-w-2xl text-sm flex items-start gap-3">
+                <Info className="w-5 h-5 text-brand-500 shrink-0 mt-0.5" />
                 <div>
-                  <span className="font-semibold text-slate-200">Counterfactual: </span>
-                  {trace.counterfactual}
+                  <span className="font-bold text-slate-800">Counterfactual: </span>
+                  <span className="text-slate-600 font-medium">{trace.counterfactual}</span>
                 </div>
               </div>
             </Panel>
@@ -123,31 +123,31 @@ export const DecisionGraph = ({ trace }) => {
 
       {/* Side Drawer for Node Details */}
       {selectedNode && (
-        <div className="w-96 border-l border-slate-800 bg-slate-900 p-6 overflow-y-auto flex flex-col shadow-2xl z-10 animate-in slide-in-from-right duration-200">
+        <div className="w-96 border-l border-white/50 glass-panel !rounded-none !border-y-0 !border-r-0 p-6 overflow-y-auto flex flex-col shadow-2xl z-10 animate-in slide-in-from-right duration-200">
           <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-semibold text-slate-100">{selectedNode.data.label}</h3>
+            <h3 className="text-lg font-bold text-slate-800 drop-shadow-sm">{selectedNode.data.label}</h3>
             <button 
               onClick={() => setSelectedNode(null)}
-              className="text-slate-400 hover:text-slate-200 p-1"
+              className="text-slate-400 hover:text-slate-600 bg-white/40 hover:bg-white/60 p-1.5 rounded-full transition-colors"
             >
               ×
             </button>
           </div>
           
-          <div className="bg-slate-800/50 p-4 rounded-lg mb-6 border border-slate-800">
-            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Narrative Detail</h4>
-            <p className="text-sm text-slate-200 leading-relaxed">{selectedNode.data.detail}</p>
+          <div className="bg-white/40 p-5 rounded-xl mb-6 border border-white/60 shadow-inner">
+            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Narrative Detail</h4>
+            <p className="text-sm text-slate-700 leading-relaxed font-medium">{selectedNode.data.detail}</p>
           </div>
 
           <div>
-            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Computed Values</h4>
-            <div className="bg-slate-950 rounded-lg overflow-hidden border border-slate-800">
+            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Computed Values</h4>
+            <div className="bg-white/50 rounded-xl overflow-hidden border border-white/60 shadow-inner">
               <table className="w-full text-sm text-left">
                 <tbody>
                   {Object.entries(selectedNode.data.values || {}).map(([k, v], idx) => (
-                    <tr key={k} className={idx !== 0 ? 'border-t border-slate-800' : ''}>
-                      <td className="px-4 py-3 font-medium text-slate-400 bg-slate-900/50 w-1/2">{k}</td>
-                      <td className="px-4 py-3 text-slate-200">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</td>
+                    <tr key={k} className={idx !== 0 ? 'border-t border-white/40' : ''}>
+                      <td className="px-4 py-3 font-bold text-slate-600 bg-white/40 w-1/2">{k}</td>
+                      <td className="px-4 py-3 text-slate-800 font-medium">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</td>
                     </tr>
                   ))}
                 </tbody>

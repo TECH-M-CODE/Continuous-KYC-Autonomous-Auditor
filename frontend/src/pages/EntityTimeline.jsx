@@ -42,38 +42,38 @@ export const EntityTimeline = () => {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header Card */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+      <div className="glass-panel p-6 shadow-sm">
         <div className="flex justify-between items-start">
           <div>
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-brand-500/10 rounded-lg">
-                <Building2 className="w-6 h-6 text-brand-400" />
+              <div className="p-2 bg-white/60 rounded-xl shadow-sm border border-white/80">
+                <Building2 className="w-6 h-6 text-brand-600" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-slate-100">{entity.name}</h1>
-                <p className="text-sm text-slate-400 font-mono mt-1">{entity.id}</p>
+                <h1 className="text-2xl font-bold text-slate-800 drop-shadow-sm">{entity.name}</h1>
+                <p className="text-sm text-slate-500 font-mono font-medium mt-1">{entity.id}</p>
               </div>
             </div>
             
-            <div className="flex items-center gap-4 mt-6 text-sm text-slate-300">
-              <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4 text-slate-500" /> {entity.jurisdiction}</span>
-              <span className="text-slate-600">|</span>
-              <span className="flex items-center gap-1.5"><Building2 className="w-4 h-4 text-slate-500" /> {entity.type}</span>
+            <div className="flex items-center gap-4 mt-6 text-sm text-slate-600 font-semibold">
+              <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4 text-brand-500" /> {entity.jurisdiction}</span>
+              <span className="text-slate-400">|</span>
+              <span className="flex items-center gap-1.5"><Building2 className="w-4 h-4 text-brand-500" /> {entity.type}</span>
             </div>
           </div>
           
           <div className="text-right">
-            <div className="text-sm text-slate-400 mb-1">Risk Score</div>
-            <div className="text-4xl font-bold text-red-400">{entity.risk_score}</div>
+            <div className="text-sm font-bold text-slate-500 mb-1 uppercase tracking-wider">Risk Score</div>
+            <div className="text-4xl font-bold text-red-500 drop-shadow-sm mb-2">{entity.risk_score}</div>
             <StatusBadge band={entity.risk_band?.toLowerCase()} />
           </div>
         </div>
 
         {/* PEPs */}
         {entity.peps?.length > 0 && (
-          <div className="mt-6 pt-6 border-t border-slate-800 flex flex-wrap gap-2">
+          <div className="mt-6 pt-6 border-t border-white/50 flex flex-wrap gap-2">
             {entity.peps.map(pep => (
-              <span key={pep.id} className="px-2.5 py-0.5 rounded-full text-xs font-medium border bg-orange-500/10 text-orange-400 border-orange-500/20">
+              <span key={pep.id} className="px-3 py-1 rounded-full text-xs font-bold border shadow-sm bg-orange-100 text-orange-600 border-orange-200">
                 PEP: {pep.full_name} ({pep.role})
               </span>
             ))}
@@ -82,38 +82,38 @@ export const EntityTimeline = () => {
       </div>
 
       {/* Timeline from recent_events */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6">
-        <h2 className="text-lg font-semibold text-slate-100 mb-6 flex items-center gap-2">
-          <History className="w-5 h-5 text-slate-400" />
+      <div className="glass-panel p-6 shadow-sm">
+        <h2 className="text-lg font-bold text-slate-800 mb-6 flex items-center gap-2 drop-shadow-sm">
+          <History className="w-5 h-5 text-brand-500" />
           Event Timeline
         </h2>
         
-        <div className="relative pl-4 space-y-8 before:absolute before:inset-y-0 before:left-4 before:-ml-px before:w-0.5 before:bg-slate-800">
+        <div className="relative pl-4 space-y-8 before:absolute before:inset-y-0 before:left-4 before:-ml-px before:w-0.5 before:bg-white/60">
           {entity.recent_events?.map((event) => (
             <div key={event.id} className="relative flex gap-4">
-              <div className={`absolute -left-6 w-4 h-4 rounded-full border-2 border-slate-900 flex items-center justify-center ${event.severity === 'CRITICAL' || event.severity === 'HIGH' ? 'bg-red-400' : 'bg-yellow-400'}`}>
+              <div className={`absolute -left-6 w-4 h-4 rounded-full border-2 border-white flex items-center justify-center shadow-sm ${event.severity === 'CRITICAL' || event.severity === 'HIGH' ? 'bg-red-500' : 'bg-amber-400'}`}>
               </div>
               
-              <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-4 flex-1">
-                <div className="flex justify-between items-start mb-2">
+              <div className="bg-white/40 border border-white/60 rounded-xl p-5 flex-1 shadow-sm hover:bg-white/60 transition-colors">
+                <div className="flex justify-between items-start mb-3">
                   <div className="flex items-center gap-2">
                     {event.event_category === 'ADVERSE_MEDIA' ? (
-                      <Newspaper className="w-4 h-4 text-blue-400" />
+                      <Newspaper className="w-4 h-4 text-brand-500" />
                     ) : (
-                      <ArrowRightLeft className="w-4 h-4 text-emerald-400" />
+                      <ArrowRightLeft className="w-4 h-4 text-emerald-500" />
                     )}
-                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
                       {event.event_category?.replace('_', ' ')}
                     </span>
                   </div>
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs font-semibold text-slate-500">
                     {new Date(event.created_at).toLocaleString()}
                   </span>
                 </div>
                 
-                <h3 className="text-sm font-medium text-slate-200">{event.reasoning}</h3>
+                <h3 className="text-sm font-bold text-slate-800 leading-relaxed">{event.reasoning}</h3>
                 {event.score_delta != null && (
-                  <p className="text-sm text-slate-400 mt-2 font-mono bg-slate-900/50 inline-block px-2 py-1 rounded">
+                  <p className="text-sm text-red-600 mt-3 font-mono font-bold bg-red-100 inline-block px-3 py-1.5 rounded-lg border border-red-200 shadow-sm">
                     Score Δ: +{event.score_delta}
                   </p>
                 )}
@@ -122,7 +122,7 @@ export const EntityTimeline = () => {
           ))}
 
           {(!entity.recent_events || entity.recent_events.length === 0) && (
-            <div className="text-center text-slate-500 py-8">No recent events for this entity.</div>
+            <div className="text-center text-slate-500 font-semibold py-8">No recent events for this entity.</div>
           )}
         </div>
       </div>
