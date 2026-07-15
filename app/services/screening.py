@@ -8,30 +8,28 @@ Reverse: screen_watchlist_addition() checks a newly-added sanctioned name
 entities/directors -- closing the loop sanctions_list.py deferred to "the
 pipeline" when it was built.
 
-Not hash-chained: screened_out audit entries use the same UNCHAINED_SPRINT2
-sentinel as sanctions_list.py's list_refreshed entries -- see that module
-for why (real chaining is Dev 3's Sprint 3).
+screened_out entries go through audit_service.append_audit(), same as every
+other audit row -- they used to write a separately-hashed, unchained sentinel
+row instead (a Sprint 2 stopgap pending Dev 3's real chaining), which broke
+/audit/verify the moment a screened_out event landed between two real chained
+entries in insertion order.
 """
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Iterable
 
 from rapidfuzz import fuzz
 
-from app.models.audit import AuditLog
 from app.models.entities import Entity, EntityPerson
 from app.repositories.unit_of_work import UnitOfWork
+from app.services.audit_service import append_audit
 from app.services.ingestion.base import FeedAdapter
 
 log = logging.getLogger(__name__)
 
 SCREENING_PASS_THRESHOLD = 80.0
-UNCHAINED_SENTINEL = "UNCHAINED_SPRINT2"
 
 # Below this length, token_set_ratio's subset-match behavior scores a false
 # 100 whenever the short candidate's only token happens to appear anywhere
@@ -140,24 +138,9 @@ def screen_watchlist_addition(payload: dict) -> list[ScreeningMatch]:
 
 
 def _audit_screened_out(name: str, context: str) -> None:
-    """Write a screened_out audit_log row. NOT hash-chained -- see module docstring."""
+    """Write a screened_out audit_log row into the real hash chain."""
     payload = {"name": name, "context": context, "threshold": SCREENING_PASS_THRESHOLD}
-    payload_json = json.dumps(payload, sort_keys=True)
-    timestamp = datetime.now(timezone.utc)
-    entry_hash = hashlib.sha256(
-        f"{UNCHAINED_SENTINEL}|screened_out|{payload_json}|{timestamp.isoformat()}".encode("utf-8")
-    ).hexdigest()
-
     with UnitOfWork() as uow:
-        uow.audit_log.add(
-            AuditLog(
-                actor_id="system",
-                action="screened_out",
-                payload=payload_json,
-                prev_hash=UNCHAINED_SENTINEL,
-                entry_hash=entry_hash,
-                timestamp=timestamp,
-            )
-        )
+        append_audit(action="screened_out", payload=payload, uow=uow)
         uow.commit()
     log.debug("screened_out: %r (%s)", name, context)

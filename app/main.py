@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import admin, alerts, audit, entities, health, sar, sse, watchlist
+from app.api import admin, alerts, audit, drill, entities, health, sar, sse, watchlist
 from app.api.admin import inject_adapter
 from app.api.pipeline import router as pipeline_router
 from app.config import settings
@@ -32,6 +32,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     registry.register(inject_adapter)  # shared with app.api.admin's route handler
 
     scheduler = build_scheduler(registry)
+
+    # Loop D: autonomous self-assessment (red-team drill + dormancy sweep).
+    # Registered on the same scheduler as the ingest adapters; the design runs it
+    # nightly, but the interval is configurable (0 disables it).
+    if settings.loop_d_interval_seconds > 0:
+        from datetime import datetime, timedelta, timezone
+        from app.services.loop_d import run_loop_d
+
+        scheduler.add_job(
+            run_loop_d,
+            trigger="interval",
+            seconds=settings.loop_d_interval_seconds,
+            id="loop_d_self_assessment",
+            # First run shortly after boot (not at t=0) so ingest adapters seed the
+            # sanctions cache the drill screens against.
+            next_run_time=datetime.now(timezone.utc) + timedelta(seconds=20),
+            max_instances=1,
+            coalesce=True,
+        )
+
     scheduler.start()
 
     # Sprint 3: wire the real agent pipeline to Loop B
@@ -105,4 +125,5 @@ app.include_router(audit.router, prefix=settings.api_v1_prefix)
 app.include_router(watchlist.router, prefix=settings.api_v1_prefix)
 app.include_router(sse.router, prefix=settings.api_v1_prefix)
 app.include_router(admin.router, prefix=settings.api_v1_prefix)
+app.include_router(drill.router, prefix=settings.api_v1_prefix)
 app.include_router(pipeline_router, prefix=settings.api_v1_prefix)
