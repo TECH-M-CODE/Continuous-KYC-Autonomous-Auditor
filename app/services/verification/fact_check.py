@@ -104,10 +104,16 @@ def _get(obj: Any, *names: str, default: Any = None) -> Any:
 
 
 def _cfg(policy: Any) -> Any:
+    """Defaults to {} at any missing step -- see confidence.py's _cfg() for why:
+    this nested block is optional and every caller goes through _c(), which
+    already falls back to per-key defaults.
+    """
     node = policy
     for key in ("verification", "corroboration"):
-        node = node.get(key) if isinstance(node, dict) else getattr(node, key)
-    return node
+        if node is None:
+            return {}
+        node = node.get(key) if isinstance(node, dict) else getattr(node, key, None)
+    return node if node is not None else {}
 
 
 def _c(node: Any, key: str, default: Any = None) -> Any:

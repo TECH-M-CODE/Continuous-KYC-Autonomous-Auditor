@@ -51,6 +51,7 @@ class AuditorState(TypedDict, total=False):
     score_delta: float                   # delta applied to entity risk score
     new_risk_score: float                # entity risk score after apply_delta
     risk_band: str                       # entity risk band after apply_delta
+    risk_event_id: Optional[str]         # RiskEvent.id created by apply_delta -- Alert.trigger_event_id FKs to this, not event_id
     evidence: list[dict]                 # [{source, snippet, url, relevance}]
     investigation_summary: Optional[str]
 

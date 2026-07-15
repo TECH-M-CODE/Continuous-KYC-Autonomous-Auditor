@@ -31,7 +31,7 @@ def apply_delta(
     reasoning: Optional[str] = None,
     indirect: bool = False,
     policy: Optional[RiskPolicy] = None
-) -> float:
+) -> RiskEvent:
     entity = uow.entities.get(entity_id)
     if not entity:
         raise ValueError(f"Entity not found: {entity_id}")
@@ -86,5 +86,5 @@ def apply_delta(
     if not indirect and score_delta.delta != 0.0:
         from app.services.scoring.propagator import propagate
         propagate(entity_id, score_delta.delta, uow, policy)
-        
-    return new_score
+
+    return risk_event

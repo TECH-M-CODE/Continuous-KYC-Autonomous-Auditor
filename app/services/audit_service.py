@@ -14,6 +14,21 @@ GENESIS_HASH = "GENESIS"
 SYSTEM_ACTOR = "system"
 
 
+def _normalize_timestamp(timestamp: datetime) -> str:
+    """Canonical isoformat string, independent of tz-awareness.
+
+    ``append_audit`` hashes a fresh tz-aware ``datetime.now(timezone.utc)``, but
+    SQLite's DateTime column drops tzinfo on round-trip -- a value reloaded via
+    ``verify_chain`` comes back naive. Without normalizing, ``.isoformat()``
+    produces two different strings for the same instant ("...12+00:00" vs
+    "...12"), so recomputing the hash after ANY reload never matches the
+    original, for every row, tampered or not.
+    """
+    if timestamp.tzinfo is not None:
+        timestamp = timestamp.astimezone(timezone.utc).replace(tzinfo=None)
+    return timestamp.isoformat()
+
+
 def _compute_entry_hash(
     prev_hash: str,
     seq: int,
@@ -29,14 +44,36 @@ def _compute_entry_hash(
         f"{actor}|"
         f"{action}|"
         f"{payload_json}|"
-        f"{timestamp.isoformat()}"
+        f"{_normalize_timestamp(timestamp)}"
     )
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 def _last_entry(entity_id: str | None, uow: UnitOfWork) -> AuditLog | None:
-    """Return the latest audit entry for this entity."""
-    entries = uow.audit_log.list(entity_id=entity_id)
+    """Return the latest audit entry overall.
+
+    The hash chain is one global ledger across every entity, not one chain per
+    entity: ``verify_chain(entity_id=None)`` (the ``/audit/verify`` endpoint)
+    walks the whole table in global insertion order and expects each entry's
+    ``prev_hash`` to equal the *previous row in that order*, regardless of
+    which entity it belongs to. Scoping this lookup by ``entity_id`` (as
+    before) chains each entity to its own prior entry instead, so as soon as
+    two different entities have interleaved audit rows -- true from the first
+    real event onward -- the global walk hits a "prev hash mismatch" on
+    legitimate, untampered data. ``entity_id`` is accepted for signature
+    stability but intentionally unused here.
+
+    Flushes first: SessionLocal is built with autoflush=False (models/base.py),
+    and reporter.py calls append_audit() several times per event inside one
+    UnitOfWork before its single final commit -- e.g. ENTITY_RISK_UPDATED then
+    ALERT_CREATED then SAR_DRAFT_CREATED. Without an explicit flush here, this
+    query never sees those still-pending rows from earlier in the same
+    request, so every entry in the batch reads back an empty/stale list and
+    wrongly computes prev_hash=GENESIS instead of chaining to the one before
+    it -- again breaking verification on entirely legitimate data.
+    """
+    uow.session.flush()
+    entries = uow.audit_log.list(entity_id=None)
     return entries[-1] if entries else None
 
 

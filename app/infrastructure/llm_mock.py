@@ -50,8 +50,17 @@ CANNED_RESPONSES: Final[dict[str, dict[str, Any]]] = {
         ),
     },
     "classify_event": {
-        "event_type": "adverse_media_fraud",
-        "severity": "high",
+        # event_type must be a policy.yaml weight key (compute_delta() raises
+        # otherwise); severity is a float in [0,1], not a band label -- both
+        # previously violated ClassifyEventResult's schema, so every classify
+        # call failed validation and silently degraded to defaults, 100% of
+        # the time, regardless of LLM_MOCK_FAIL_RATE.
+        "event_type": "adverse_media",
+        "severity": 0.75,
+        "evidence_summary": (
+            "Adverse media report ties the entity to alleged procurement fraud; "
+            "screening matched a name on record."
+        ),
     },
     "sar_narrative": {
         "narrative": (
