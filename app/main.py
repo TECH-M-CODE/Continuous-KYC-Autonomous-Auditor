@@ -32,6 +32,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     import app.models.audit      # noqa: F401
     Base.metadata.create_all(bind=engine)
 
+    # Auto-seed dataset-derived KYC profiles if the DB is empty
+    try:
+        from data.seed.seed_entities import seed as seed_entities
+        from app.repositories.unit_of_work import UnitOfWork
+        with UnitOfWork() as uow:
+            existing = uow.entities.list()
+        if not existing:
+            import logging
+            logging.getLogger(__name__).info("DB empty — seeding dataset KYC profiles...")
+            seed_entities()
+    except Exception as _seed_err:
+        import logging
+        logging.getLogger(__name__).warning("Auto-seed skipped: %s", _seed_err)
+
     # Adapters are constructed here (not at module import time) since
     # TransactionReplayAdapter loads + sorts the sampled parquet in
     # __init__ -- a real cost that must not happen just from importing

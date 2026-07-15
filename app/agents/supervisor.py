@@ -233,6 +233,11 @@ async def run_pipeline(event: RawEvent) -> AuditorState:
     # deliberately NOT marked, so Loop B retries it next cycle.
     if not final_state.get("error"):
         _mark_processed(event.id)
+        
+    entity_name = final_state.get("entity_name", "Unknown")
+    new_risk_score = final_state.get("new_risk_score", 0.0)
+    risk_band = final_state.get("risk_band", "LOW")
+    log.info(f"Pipeline complete -> Entity evaluated: {entity_name} | Score: {new_risk_score} | Band: {risk_band}")
 
     log.info(
         "run_pipeline: DONE event=%s outcome=%s alert=%s sar=%s",

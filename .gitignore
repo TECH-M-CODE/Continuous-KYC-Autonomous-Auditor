@@ -42,3 +42,25 @@ Thumbs.db
 
 # Logs
 *.log
+
+.claude/
+
+# Node / Frontend
+node_modules/
+dist/
+build/
+.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Data generation and notebooks
+data/adverse-media-news/
+data/financial-data/
+*.ipynb
+data/kyc_profiles/*.csv

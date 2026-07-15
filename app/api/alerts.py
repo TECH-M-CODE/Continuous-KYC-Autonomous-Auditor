@@ -87,6 +87,7 @@ def _alert_to_detail(alert, entity_name: str) -> AlertDetailDTO:
 
     return AlertDetailDTO(
         id=alert.id,
+        entity_id=alert.entity_id,
         entity_name=entity_name,
         priority=alert.priority.upper(),
         status=alert.status.upper(),

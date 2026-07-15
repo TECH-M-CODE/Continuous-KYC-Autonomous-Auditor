@@ -54,21 +54,16 @@ class NvidiaClient:
 
     def __init__(self, api_key: str) -> None:
         self._api_key = api_key
+        # Delay openai client creation to generate() so it binds to the correct event loop
+        # when running in LangGraph worker threads.
         try:
-            from openai import AsyncOpenAI
-            self._client = AsyncOpenAI(
-                api_key=api_key,
-                base_url=NVIDIA_BASE_URL,
-            )
-            log.info(
-                "NvidiaClient initialised — real NVIDIA NIM calls are ACTIVE "
-                "(base_url=%s)", NVIDIA_BASE_URL
-            )
+            import openai
         except ImportError as exc:
             raise ImportError(
                 "openai package is not installed. "
                 "Run: pip install 'openai>=1.30'"
             ) from exc
+
 
     async def generate(self, prompt: str, *, model: str, task_tag: str) -> str:
         """Call NVIDIA NIM and return a raw JSON string.
@@ -79,16 +74,29 @@ class NvidiaClient:
         nim_model = _resolve_model(model)
         log.debug("NvidiaClient.generate: nim_model=%s task_tag=%s", nim_model, task_tag)
 
-        response = await self._client.chat.completions.create(
-            model=nim_model,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user",   "content": prompt},
-            ],
-            temperature=0.1,       # near-deterministic — critical for compliance
-            max_tokens=1024,
-            response_format={"type": "json_object"},  # NIM honours this flag
+        import asyncio
+        from openai import OpenAI
+        client = OpenAI(
+            api_key=self._api_key,
+            base_url=NVIDIA_BASE_URL,
         )
+
+        # Run the synchronous client call in a thread to avoid blocking the event loop
+        def _call_api():
+            return client.chat.completions.create(
+                model=nim_model,
+                messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user",   "content": prompt},
+                ],
+                temperature=0.1,
+                max_tokens=1024,
+                response_format={"type": "json_object"},
+            )
+
+        response = await asyncio.to_thread(_call_api)
+
+
 
         raw: str = response.choices[0].message.content or ""
 
@@ -131,10 +139,11 @@ def build_client() -> Any:
     Priority: NVIDIA → Gemini → Mock
     This is the single factory the supervisor uses at startup.
     """
+    from app.config import settings
     from app.infrastructure.llm_mock import MockLLMClient
 
     # 1. NVIDIA NIM (preferred)
-    nvidia_key = os.getenv("NVIDIA_API_KEY")
+    nvidia_key = settings.nvidia_api_key or os.getenv("NVIDIA_API_KEY")
     if nvidia_key:
         try:
             client = NvidiaClient(api_key=nvidia_key)
@@ -146,8 +155,7 @@ def build_client() -> Any:
                 "Run: pip install 'openai>=1.30'. Trying Gemini next."
             )
 
-    # 2. Google Gemini
-    gemini_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+    gemini_key = settings.google_api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
     if gemini_key:
         try:
             from app.infrastructure.gemini_client import GeminiClient

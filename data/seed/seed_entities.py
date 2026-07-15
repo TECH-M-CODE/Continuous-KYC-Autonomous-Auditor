@@ -5,7 +5,7 @@ from app.models.base import Base, engine
 from app.models.entities import Entity
 from app.repositories.unit_of_work import UnitOfWork
 
-CSV_PATH = "data/kyc_profiles/synthetic_kyc_dataset.csv"
+CSV_PATH = "data/kyc_profiles/dataset_profiles.csv"
 
 def generate_mock_csv():
     # Make sure parent directory exists
@@ -55,65 +55,47 @@ def seed():
     # Ensure database tables exist
     Base.metadata.create_all(bind=engine)
     
-    # Check and generate fallback CSV if dataset is not found
     if not os.path.exists(CSV_PATH):
-        generate_mock_csv()
+        print(f"Dataset profiles not found at {CSV_PATH}. Please run generate_dataset_profiles.py first.")
+        return
         
-    # Read policy weights from policy.yaml
-    policy_path = "policy.yaml"
-    pep_weight = 15
-    fatf_weight = 10
-    sector_risk_map = {"Low": 0, "Medium": 5, "High": 12}
-    
-    if os.path.exists(policy_path):
-        with open(policy_path, "r") as f:
-            policy = yaml.safe_load(f) or {}
-            weights = policy.get("weights", {})
-            pep_weight = weights.get("pep_flag", 15)
-            fatf_weight = weights.get("fatf_country_flag", 10)
-            sector_risk_map = policy.get("sector_risk", sector_risk_map)
-            
     entities_to_add = []
     watched_count = 0
     
     with open(CSV_PATH, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            client_id = row["client_id"]
-            name = row["client_name"]
-            country = row["country"]
-            sector = row["sector"]
-            sector_risk = row["sector_risk"]
-            pep_flag = int(row["pep_flag"])
-            sanctions_flag = int(row["sanctions_flag"])
-            fatf_country_flag = int(row["fatf_country_flag"])
+            client_id = row.get("customer_id")
+            name = row.get("entity_name")
+            country = row.get("country")
+            sector = row.get("industry")
             
-            # Base risk score calculation
-            base_score = pep_flag * pep_weight + fatf_country_flag * fatf_weight + sector_risk_map.get(sector_risk, 0)
+            # Use dynamic risk provided by the dataset generation initially, 
+            # the pipeline will update this dynamically later.
+            try:
+                base_score = float(row.get("risk_score", 50))
+            except ValueError:
+                base_score = 50.0
+                
+            risk_band = row.get("risk_level", "MEDIUM").upper()
+            status = row.get("kyc_status", "ACTIVE").upper()
+            if status == "APPROVED":
+                status = "ACTIVE"
             
-            # Watched status rules: pep OR fatf OR sector_risk == 'High' (plus direct sanctions check)
-            watched = (pep_flag == 1 or fatf_country_flag == 1 or sector_risk == "High" or sanctions_flag == 1)
+            # Watch entities with adverse media or fraud
+            fraud_count = int(row.get("financial_fraud_count", 0) or 0)
+            adverse_media = int(row.get("adverse_media_count", 0) or 0)
+            watched = (fraud_count > 0 or adverse_media > 0 or base_score >= 60)
+            
             if watched:
                 watched_count += 1
-                
-            risk_band = "LOW"
-            if base_score >= 80:
-                risk_band = "CRITICAL"
-            elif base_score >= 60:
-                risk_band = "HIGH"
-            elif base_score >= 40:
-                risk_band = "MEDIUM"
-                
-            status = "ACTIVE"
-            if sanctions_flag == 1:
-                status = "UNDER_INVESTIGATION"
                 
             entity = Entity(
                 id=client_id,
                 name=name,
                 jurisdiction=country,
                 sector=sector,
-                risk_score=float(base_score),
+                risk_score=base_score,
                 risk_band=risk_band,
                 status=status,
                 watched=watched
@@ -132,7 +114,7 @@ def seed():
             uow.entities.add(entity)
         uow.commit()
         
-    print(f"Successfully seeded {len(entities_to_add)} entities into the database.")
+    print(f"Successfully seeded {len(entities_to_add)} dataset-derived entities into the database.")
     print(f"Watched entities count: {watched_count}")
 
 if __name__ == "__main__":

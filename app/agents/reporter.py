@@ -255,6 +255,11 @@ def reporter(state: AuditorState, *, gateway) -> AuditorState:
     state["sar_id"] = sar_id
     state["final_outcome"] = final_outcome
     state["trace"] = tb
+    
+    # Required logging for pipeline observability
+    log.info(f"Entity evaluated: {entity_name} | Score: {state.get('new_risk_score')} | Band: {risk_band}")
+    log.info(f"SAR/Audit trail generated: {alert_id}")
+    
     log.info(
         "reporter: DONE entity=%s alert=%s sar=%s outcome=%s",
         entity_name, alert_id, sar_id, final_outcome,

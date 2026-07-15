@@ -44,7 +44,9 @@ def entity_agent(state: AuditorState) -> AuditorState:
         event_raw.get("payload", {}).get("entity_name", "")
         or event_raw.get("payload", {}).get("sanctioned_name", "")
         or event_raw.get("entity_name", "")
+        or event_raw.get("entity_hint", "")
     )
+
 
     entity = None
     persons = []

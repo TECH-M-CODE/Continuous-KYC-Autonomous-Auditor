@@ -43,6 +43,11 @@ _RSS_FEEDS: list[dict] = [
         "source": "gdelt",
         "max_articles": 10,
     },
+    {
+        "url": "http://feeds.bbci.co.uk/news/rss.xml",
+        "source": "bbc_news",
+        "max_articles": 15,
+    },
 ]
 
 _ADVERSE_KEYWORDS = frozenset({

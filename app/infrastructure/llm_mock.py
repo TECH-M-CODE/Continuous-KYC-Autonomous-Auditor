@@ -43,7 +43,7 @@ class MockLLMError(RuntimeError):
 CANNED_RESPONSES: Final[dict[str, dict[str, Any]]] = {
     "resolver_verdict": {
         "match": True,
-        "confidence": 0.93,
+        "confidence": 0.99,
         "reasoning": (
             "Entity name and jurisdiction match the top candidate card; the "
             "director named in the article appears in the entity's known persons."
@@ -61,6 +61,15 @@ CANNED_RESPONSES: Final[dict[str, dict[str, Any]]] = {
             "Adverse media report ties the entity to alleged procurement fraud; "
             "screening matched a name on record."
         ),
+    },
+    "news_enrichment": {
+        "adverse_media_hits": 2,
+        "financial_fraud_hits": 1,
+        "sanctions_hits": 0,
+        "regulatory_mentions": 1,
+        "top_articles": [{"title": "Major Fraud Allegations", "url": "https://example.com/news"}],
+        "summary": "Mock enrichment summary indicating significant risk factors found in datasets.",
+        "confidence_score": 0.95
     },
     "sar_narrative": {
         "narrative": (

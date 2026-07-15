@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import {
   ReactFlow,
   MiniMap,
@@ -7,6 +7,7 @@ import {
   useNodesState,
   useEdgesState,
   Panel,
+  MarkerType,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
@@ -26,11 +27,11 @@ const getLayoutedElements = (nodes, edges, direction = 'LR') => {
   const dagreGraph = new dagre.graphlib.Graph();
   dagreGraph.setDefaultEdgeLabel(() => ({}));
   
-  // Nodes have a fixed width/height roughly matching the Tailwind classes
-  const nodeWidth = 260; 
-  const nodeHeight = 80;
+  // Nodes have a fixed width/height roughly matching the Tailwind classes (w-72 is 288px)
+  const nodeWidth = 288; 
+  const nodeHeight = 100;
 
-  dagreGraph.setGraph({ rankdir: direction });
+  dagreGraph.setGraph({ rankdir: direction, ranksep: 80, nodesep: 100 });
 
   nodes.forEach((node) => {
     dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
@@ -71,27 +72,43 @@ export const DecisionGraph = ({ trace }) => {
     source: e.source,
     target: e.target,
     label: e.label,
-    animated: e.label?.includes('update') || e.label?.includes('evaluate'),
-    style: { stroke: '#475569', strokeWidth: 2 },
-    labelStyle: { fill: '#94a3b8', fontWeight: 500 },
-    labelBgStyle: { fill: '#0f172a' }
+    animated: true, // Always animate for a nice flow effect
+    style: { stroke: '#475569', strokeWidth: 2, opacity: 0.7 },
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color: '#475569',
+    },
+    labelStyle: { fill: '#38bdf8', fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' },
+    labelBgStyle: { fill: '#0f172a', fillOpacity: 0.9, stroke: '#1e293b', strokeWidth: 1, rx: 6, ry: 6 },
+    labelBgPadding: [8, 4],
+    labelShowBg: true
   })), [trace]);
 
+  const [layoutDirection, setLayoutDirection] = useState('LR');
+
   const { nodes: layoutedNodes, edges: layoutedEdges } = useMemo(
-    () => getLayoutedElements(initialNodes, initialEdges),
-    [initialNodes, initialEdges]
+    () => getLayoutedElements(initialNodes, initialEdges, layoutDirection),
+    [initialNodes, initialEdges, layoutDirection]
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState(layoutedNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(layoutedEdges);
+
+  useEffect(() => {
+    setNodes(layoutedNodes);
+    setEdges(layoutedEdges);
+  }, [layoutedNodes, layoutedEdges, setNodes, setEdges]);
 
   const onNodeClick = useCallback((_, node) => {
     setSelectedNode(node);
   }, []);
 
   return (
-    <div className="flex h-full w-full relative bg-slate-950">
-      <div className="flex-1 relative">
+    <div className="flex h-full w-full relative bg-slate-950 overflow-hidden">
+      {/* Background Gradient Effect */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-900 via-slate-950 to-slate-950 opacity-80 pointer-events-none" />
+      
+      <div className="flex-1 relative z-0">
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -100,19 +117,44 @@ export const DecisionGraph = ({ trace }) => {
           onNodeClick={onNodeClick}
           nodeTypes={nodeTypes}
           fitView
-          minZoom={0.5}
+          fitViewOptions={{ nodes: [{ id: trace.nodes[0]?.id }], maxZoom: 1.1, padding: 0.5 }}
+          minZoom={0.2}
           maxZoom={1.5}
-          className="bg-slate-950"
+          className="bg-transparent"
         >
-          <Background color="#1e293b" gap={16} />
-          <Controls className="bg-slate-800 border-slate-700 fill-slate-300" />
+          <Background color="#334155" gap={24} size={2} className="opacity-40" />
+          <Controls className="bg-slate-800/80 backdrop-blur border-slate-700 fill-slate-300 shadow-xl rounded-xl overflow-hidden" />
+          <MiniMap 
+            nodeColor={(n) => {
+              if (n.type === 'event') return '#3b82f6';
+              if (n.type === 'screen') return '#a855f7';
+              if (n.type === 'verify') return '#10b981';
+              if (n.type === 'score') return '#f97316';
+              if (n.type === 'propagate') return '#06b6d4';
+              if (n.type === 'decision') return n.data.label?.toLowerCase().includes('alert') ? '#ef4444' : '#64748b';
+              return '#64748b';
+            }}
+            maskColor="rgba(15, 23, 42, 0.6)"
+            className="bg-slate-900/80 border border-slate-700/50 rounded-xl overflow-hidden shadow-2xl backdrop-blur-md"
+          />
+          
+          <Panel position="top-right" className="m-4">
+            <button 
+              onClick={() => setLayoutDirection(prev => prev === 'LR' ? 'TB' : 'LR')}
+              className="px-4 py-2 bg-slate-800/80 hover:bg-slate-700 backdrop-blur-md border border-slate-600/50 rounded-xl text-xs uppercase tracking-wider font-bold text-slate-200 transition-all shadow-lg"
+            >
+              {layoutDirection === 'LR' ? 'Switch to Vertical' : 'Switch to Horizontal'}
+            </button>
+          </Panel>
           
           {trace.counterfactual && (
-            <Panel position="bottom-center" className="mb-4">
-              <div className="bg-slate-800 border border-slate-700 text-slate-300 px-6 py-3 rounded-lg shadow-xl max-w-2xl text-sm flex items-start gap-3">
-                <Info className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-semibold text-slate-200">Counterfactual: </span>
+            <Panel position="bottom-center" className="mb-8">
+              <div className="bg-slate-900/80 backdrop-blur-md border border-brand-500/30 text-slate-300 px-6 py-4 rounded-2xl shadow-2xl shadow-brand-500/10 max-w-2xl text-sm flex items-start gap-4">
+                <div className="p-2 bg-brand-500/10 rounded-xl shrink-0">
+                  <Info className="w-5 h-5 text-brand-400" />
+                </div>
+                <div className="pt-0.5 leading-relaxed">
+                  <span className="font-bold text-brand-300 uppercase text-xs tracking-wider block mb-1">Counterfactual Analysis</span>
                   {trace.counterfactual}
                 </div>
               </div>
@@ -123,31 +165,42 @@ export const DecisionGraph = ({ trace }) => {
 
       {/* Side Drawer for Node Details */}
       {selectedNode && (
-        <div className="w-96 border-l border-slate-800 bg-slate-900 p-6 overflow-y-auto flex flex-col shadow-2xl z-10 animate-in slide-in-from-right duration-200">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-lg font-semibold text-slate-100">{selectedNode.data.label}</h3>
+        <div className="w-[420px] border-l border-slate-800/60 bg-slate-900/80 backdrop-blur-2xl p-6 overflow-y-auto flex flex-col shadow-2xl z-10 animate-in slide-in-from-right duration-300 relative">
+          <div className="flex justify-between items-start mb-8">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-widest text-brand-400 mb-2">{selectedNode.data.kind}</div>
+              <h3 className="text-xl font-bold text-slate-100 leading-tight">{selectedNode.data.label}</h3>
+            </div>
             <button 
               onClick={() => setSelectedNode(null)}
-              className="text-slate-400 hover:text-slate-200 p-1"
+              className="text-slate-500 hover:text-white p-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-full transition-all"
             >
               ×
             </button>
           </div>
           
-          <div className="bg-slate-800/50 p-4 rounded-lg mb-6 border border-slate-800">
-            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Narrative Detail</h4>
-            <p className="text-sm text-slate-200 leading-relaxed">{selectedNode.data.detail}</p>
+          <div className="bg-slate-950/50 p-5 rounded-2xl mb-8 border border-slate-800/60 shadow-inner">
+            <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-brand-500"></div>
+              Narrative Detail
+            </h4>
+            <p className="text-sm text-slate-300 leading-relaxed font-medium">{selectedNode.data.detail}</p>
           </div>
 
           <div>
-            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Computed Values</h4>
-            <div className="bg-slate-950 rounded-lg overflow-hidden border border-slate-800">
+            <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+              Computed Values
+            </h4>
+            <div className="bg-slate-950/50 rounded-2xl overflow-hidden border border-slate-800/60 shadow-inner">
               <table className="w-full text-sm text-left">
                 <tbody>
                   {Object.entries(selectedNode.data.values || {}).map(([k, v], idx) => (
-                    <tr key={k} className={idx !== 0 ? 'border-t border-slate-800' : ''}>
-                      <td className="px-4 py-3 font-medium text-slate-400 bg-slate-900/50 w-1/2">{k}</td>
-                      <td className="px-4 py-3 text-slate-200">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</td>
+                    <tr key={k} className={idx !== 0 ? 'border-t border-slate-800/60' : ''}>
+                      <td className="px-5 py-4 font-semibold text-slate-400 bg-slate-900/30 w-2/5 border-r border-slate-800/30">{k}</td>
+                      <td className="px-5 py-4 text-slate-200 font-mono text-xs break-all">
+                        {typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

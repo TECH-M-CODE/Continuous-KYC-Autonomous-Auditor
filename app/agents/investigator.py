@@ -92,8 +92,8 @@ def investigator(state: AuditorState, *, gateway) -> AuditorState:
         outcome="pass",
     )
 
-    # ── Risk scoring via rule engine ──────────────────────────────────────────
-    jf_val = 1.0  # safe default if policy load fails
+    # ── Risk scoring via dataset hits ──────────────────────────────────────────
+    jf_val = 1.0  
     score_delta_val = 0.0
     new_score = state.get("entity_risk_score", 0.0)
     risk_band = "UNKNOWN"
@@ -104,49 +104,97 @@ def investigator(state: AuditorState, *, gateway) -> AuditorState:
         jurisdiction = state.get("entity_jurisdiction") or "default"
         jf_val = policy.jurisdiction_factors.get(jurisdiction, policy.jurisdiction_factors.get("default", 1.0))
 
-        score_delta = compute_delta(
-            event_type=event_type,
-            severity=severity,
-            jurisdiction_factor=jf_val,
-            policy=policy,
-        )
+        # Retrieve structured data from News Agent
+        news_context = state.get("news_context", {})
+        structured = news_context.get("structured_data", {})
+        
+        adverse_media = structured.get("adverse_media_hits", 0)
+        fraud = structured.get("financial_fraud_hits", 0)
+        sanctions = structured.get("sanctions_hits", 0)
+        reg = structured.get("regulatory_mentions", 0)
+        
+        log.info(f"investigator: Found {adverse_media} adverse media articles.")
+        log.info(f"investigator: Found {fraud} financial fraud reports.")
+        log.info(f"investigator: Found {sanctions} sanctions hits.")
+        
+        # Dynamic Risk Calculation based on datasets
+        dynamic_base_score = 0
+        if sanctions > 0:
+            dynamic_base_score = 90  # Critical
+            log.info("investigator: Entity with sanctions -> Critical Risk")
+        elif fraud > 0:
+            dynamic_base_score = 75  # High
+            log.info("investigator: Entity with financial fraud -> High Risk")
+        elif adverse_media >= 3 or reg > 1:
+            dynamic_base_score = 50  # Medium
+            log.info("investigator: Entity with repeated adverse media -> Medium Risk")
+        elif adverse_media > 0 or reg > 0:
+            dynamic_base_score = 30  # Low-Medium
+            log.info("investigator: Entity with few findings -> Low Risk")
+        else:
+            dynamic_base_score = 10  # Low
+            log.info("investigator: Entity with no meaningful findings -> Low Risk")
+            
+        # Calculate delta from current score
+        score_delta_val = dynamic_base_score - new_score
 
         with UnitOfWork() as uow:
-            risk_event = apply_delta(
-                entity_id=entity_id,
-                score_delta=score_delta,
-                uow=uow,
-                event_id=state.get("event_id"),
-                event_category=event_type.upper(),
-                reasoning=evidence_summary,
-                policy=policy,
-            )
-            new_score = risk_event.score_after
-            risk_event_id = risk_event.id
-            # Read the resolved band back
+            from app.models.risk import RiskEvent
+            import uuid
+            from datetime import datetime, timezone
+            
+            # Update entity score directly in DB
             entity = uow.entities.get(entity_id)
-            risk_band = entity.risk_band if entity else "LOW"
-            uow.commit()
+            if entity:
+                old_score = entity.risk_score
+                entity.risk_score = dynamic_base_score
+                
+                # Determine risk band
+                if entity.risk_score >= 80:
+                    entity.risk_band = "CRITICAL"
+                elif entity.risk_score >= 60:
+                    entity.risk_band = "HIGH"
+                elif entity.risk_score >= 40:
+                    entity.risk_band = "MEDIUM"
+                else:
+                    entity.risk_band = "LOW"
+                    
+                # Create RiskEvent
+                risk_event = RiskEvent(
+                    id=str(uuid.uuid4()),
+                    entity_id=entity_id,
+                    event_id=state.get("event_id"),
+                    event_category=event_type.upper(),
+                    delta=score_delta_val,
+                    severity=risk_band,
+                    score_after=entity.risk_score,
+                    reasoning=evidence_summary,
+                    created_at=datetime.now(timezone.utc)
+                )
+                uow.session.add(risk_event)
+                
+                new_score = entity.risk_score
+                risk_band = entity.risk_band
+                risk_event_id = risk_event.id
+                
+                log.info(f"investigator: Risk updated from {old_score} -> {new_score}.")
+                uow.commit()
 
         tb.add(
             kind="score",
             label=f"Risk score: {new_score:.1f} ({risk_band})",
             detail=(
-                f"Δ={score_delta.delta:+.2f} "
-                f"(weight={score_delta.weight:.1f} × severity={severity:.2f} × jf={jf_val:.2f})"
+                f"Dynamic Score based on hits: AdverseMedia={adverse_media}, Fraud={fraud}, Sanctions={sanctions}"
             ),
             values={
                 "event_type": event_type,
-                "weight": score_delta.weight,
                 "severity": severity,
-                "jurisdiction_factor": jf_val,
-                "delta": score_delta.delta,
+                "delta": score_delta_val,
                 "score_after": new_score,
                 "risk_band": risk_band,
             },
             outcome="pass",
         )
-        score_delta_val = score_delta.delta
 
     except Exception as exc:  # noqa: BLE001
         log.error("investigator: scoring failed for entity=%s: %s", entity_id, exc)
