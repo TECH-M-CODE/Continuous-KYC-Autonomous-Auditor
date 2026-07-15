@@ -29,8 +29,7 @@ env/
 # Vector store persistence (regenerable via knowledge/*.py)
 data/chroma/
 
-# Generated data-prep artifacts (regenerable via data/prep/*.py)
-data/processed/
+
 
 # OS
 .DS_Store
