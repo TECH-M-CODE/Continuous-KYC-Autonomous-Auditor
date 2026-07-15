@@ -57,6 +57,7 @@ def investigator(state: AuditorState, *, gateway) -> AuditorState:
 
     # See resolver.py's comment: this node runs in asyncio.to_thread()'s worker
     # thread, which has no event loop -- asyncio.run() creates one for this call.
+    # Run async gateway in the worker thread's own event loop.
     result = asyncio.run(
         gateway.complete(prompt, schema=ClassifyEventResult, task_tag="classify_event")
     )

@@ -27,6 +27,7 @@ def build_reporter_prompt(
     confidence: float,
     risk_band: str,
     new_risk_score: float,
+    news_context: dict | None = None,
 ) -> str:
     """Construct the SAR narrative generation prompt."""
     match_lines = "\n".join(
@@ -36,6 +37,12 @@ def build_reporter_prompt(
     )
     if not match_lines:
         match_lines = "  (no direct watchlist matches)"
+
+    news_block = ""
+    if news_context:
+        cred = news_context.get("source_credibility", 0.0)
+        flags = news_context.get("risk_flags", [])
+        news_block = f"\nLIVE NEWS INTELLIGENCE:\n  Source Credibility: {cred}/100\n  Risk Flags: {', '.join(flags) if flags else 'None'}\n"
 
     return f"""You are a compliance officer drafting a Suspicious Activity Report (SAR) narrative.
 
@@ -55,11 +62,11 @@ INVESTIGATION FINDINGS:
 
 SCREENING MATCHES:
 {match_lines}
-
+{news_block}
 TASK:
 Draft a concise SAR narrative (3–5 sentences) suitable for regulatory filing. The narrative must:
 1. State the subject entity and the nature of the suspicious activity
-2. Reference the screening matches or event details that triggered the alert
+2. Reference the screening matches, news credibility, or event details that triggered the alert
 3. Note the risk score and band
 4. Be factual and written in the third person
 

@@ -21,6 +21,7 @@ def build_resolver_prompt(
     screening_matches: list[dict],
     event_text: str,
     event_source: str,
+    news_context: dict | None = None,
 ) -> str:
     """Construct the resolver prompt from runtime context."""
     matches_block = "\n".join(
@@ -33,6 +34,12 @@ def build_resolver_prompt(
     if not matches_block:
         matches_block = "  (no matches)"
 
+    news_block = ""
+    if news_context:
+        cred = news_context.get("source_credibility", 0.0)
+        flags = news_context.get("risk_flags", [])
+        news_block = f"\nLIVE NEWS INTELLIGENCE:\n  Source Credibility: {cred}/100\n  Risk Flags: {', '.join(flags) if flags else 'None'}\n"
+
     return f"""You are a KYC compliance analyst reviewing a potential sanctions/watchlist match.
 
 ENTITY UNDER REVIEW:
@@ -44,7 +51,7 @@ FUZZY SCREENING MATCHES FOUND:
 
 SOURCE EVENT:
   Source: {event_source}
-  Text: {event_text[:1000]}
+  Text: {event_text[:1000]}{news_block}
 
 TASK:
 Determine whether these screening matches represent a GENUINE identity match or a FALSE POSITIVE.
@@ -54,6 +61,7 @@ Consider:
 - Jurisdiction consistency
 - Context from the event text (does it mention this entity or coincidence?)
 - Whether partial-name matches are meaningful in context
+- The credibility of the live news source (high credibility should increase confidence in true positives if context aligns)
 
 Respond with ONLY this JSON (no markdown, no explanation outside the JSON):
 {{

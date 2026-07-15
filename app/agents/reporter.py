@@ -71,17 +71,19 @@ def reporter(state: AuditorState, *, gateway) -> AuditorState:
     prompt = build_reporter_prompt(
         entity_name=entity_name,
         entity_jurisdiction=state.get("entity_jurisdiction"),
-        event_type=state.get("event_type", "adverse_media"),
-        severity=state.get("severity", 0.7),
-        evidence_summary=state.get("investigation_summary", ""),
+        event_type=state.get("event_type", "Unknown Event"),
+        severity=state.get("severity", 0.0),
+        evidence_summary=state.get("investigation_summary", "No evidence summary provided."),
         screening_matches=state.get("screening_matches", []),
-        confidence=state.get("confidence", 0.5),
+        confidence=state.get("confidence", 0.0),
         risk_band=risk_band,
         new_risk_score=state.get("new_risk_score", 0.0),
+        news_context=state.get("news_context"),
     )
 
     # See resolver.py's comment: this node runs in asyncio.to_thread()'s worker
     # thread, which has no event loop -- asyncio.run() creates one for this call.
+    # Run async gateway in the worker thread's own event loop.
     result = asyncio.run(
         gateway.complete(prompt, schema=SARNarrativeResult, task_tag="sar_narrative")
     )
@@ -204,6 +206,7 @@ def reporter(state: AuditorState, *, gateway) -> AuditorState:
             # so this stays part of the one atomic transaction (a second, nested
             # UnitOfWork here opened a second SQLite connection while this one's
             # transaction was still open, deadlocking with "database is locked").
+            # 6. Mark RawEvent processed — same UoW for full atomicity
             raw_ev = uow.events.get(state.get("event_id", ""))
             if raw_ev:
                 raw_ev.processed = True

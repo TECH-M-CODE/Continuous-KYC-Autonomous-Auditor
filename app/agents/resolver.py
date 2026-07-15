@@ -48,17 +48,21 @@ def resolver(state: AuditorState, *, gateway) -> AuditorState:
 
     # ── LLM call (via degradation ladder) ────────────────────────────────────
     prompt = build_resolver_prompt(
-        entity_name=entity_name,
+        entity_name=state.get("entity_name", "Unknown"),
         entity_jurisdiction=state.get("entity_jurisdiction"),
         screening_matches=state.get("screening_matches", []),
         event_text=state.get("event_raw", {}).get("text", ""),
         event_source=state.get("event_raw", {}).get("source", "unknown"),
+        news_context=state.get("news_context"),
     )
 
     # Run async gateway in sync context. This node runs inside asyncio.to_thread()'s
     # worker thread (see supervisor.run_pipeline), which has no event loop of its
     # own -- asyncio.get_event_loop() raises RuntimeError there. asyncio.run()
     # creates and tears down a fresh loop for this call instead.
+    # Run async gateway in the worker thread's own event loop.
+    # asyncio.to_thread() gives us a thread with no running loop, so
+    # asyncio.run() is the correct call here (creates + runs + closes a loop).
     result = asyncio.run(
         gateway.complete(prompt, schema=ResolverVerdict, task_tag="resolver_verdict")
     )
