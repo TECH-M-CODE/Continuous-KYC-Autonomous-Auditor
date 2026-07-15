@@ -9,6 +9,15 @@ const client = axios.create({
   },
 });
 
+// Map 'limit' to 'page_size' for FastAPI
+client.interceptors.request.use((config) => {
+  if (config.params && config.params.limit) {
+    config.params.page_size = config.params.limit;
+    delete config.params.limit;
+  }
+  return config;
+});
+
 // Unwrap the backend's standard { success, data, message } envelope
 // so every call receives the inner `data` payload directly.
 client.interceptors.response.use((response) => {
