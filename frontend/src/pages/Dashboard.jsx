@@ -1,5 +1,5 @@
-import React from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ShieldCheck, ShieldAlert, Users, AlertTriangle, FileText, Activity } from 'lucide-react';
 import { apiClient } from '../api/client';
 
@@ -34,6 +34,18 @@ const timeAgo = (isoDate) => {
 };
 
 export const Dashboard = () => {
+  const queryClient = useQueryClient();
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formData, setFormData] = useState({ name: '', jurisdiction: '', sector: '' });
+
+  const addCustomerMutation = useMutation({
+    mutationFn: apiClient.addCustomer,
+    onSuccess: () => {
+      queryClient.invalidateQueries(['dashboard-entities']);
+      setIsModalOpen(false);
+      setFormData({ name: '', jurisdiction: '', sector: '' });
+    },
+  });
   const { data: alerts = [] } = useQuery({
     queryKey: ['dashboard-alerts'],
     queryFn: () => apiClient.getAlerts({ limit: 100 }),
@@ -68,11 +80,74 @@ export const Dashboard = () => {
     .slice(0, 4);
 
   return (
-    <div className="flex flex-col space-y-8 max-w-7xl mx-auto w-full">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-100">System Dashboard</h1>
-        <p className="text-sm text-slate-400 mt-1">Overview of your Continuous KYC autonomous auditing system.</p>
+    <div className="flex flex-col space-y-8 max-w-7xl mx-auto w-full relative">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-100">System Dashboard</h1>
+          <p className="text-sm text-slate-400 mt-1">Overview of your Continuous KYC autonomous auditing system.</p>
+        </div>
+        <button
+          onClick={() => setIsModalOpen(true)}
+          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white font-medium rounded-lg transition-colors shadow-lg"
+        >
+          Add Customer
+        </button>
       </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-md p-6 shadow-2xl">
+            <h2 className="text-xl font-bold text-slate-100 mb-4">Add New Customer</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">Entity Name</label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-brand-500"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g. Acme Corp"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">Jurisdiction</label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-brand-500"
+                  value={formData.jurisdiction}
+                  onChange={(e) => setFormData({ ...formData, jurisdiction: e.target.value })}
+                  placeholder="e.g. US"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">Sector</label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-brand-500"
+                  value={formData.sector}
+                  onChange={(e) => setFormData({ ...formData, sector: e.target.value })}
+                  placeholder="e.g. Finance"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 text-slate-300 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => addCustomerMutation.mutate(formData)}
+                disabled={addCustomerMutation.isPending || !formData.name}
+                className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
+              >
+                {addCustomerMutation.isPending ? 'Adding...' : 'Add Customer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Top Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
