@@ -185,6 +185,15 @@ async def run_pipeline(event: RawEvent) -> AuditorState:
         log.error("run_pipeline: graph execution failed for event=%s: %s", event.id, exc)
         return {**initial_state, "error": str(exc), "final_outcome": ""}  # type: ignore[return-value]
 
+    # Mark the event processed for every terminal outcome that isn't an error.
+    # The reporter node already flags critical/SAR-path events, but screened_out,
+    # dismissed, review_queued, and medium/high-alert paths route to END before
+    # the reporter -- without this they would be re-drawn by Loop B every cycle,
+    # flooding duplicate alerts and audit rows. An event left in an error state is
+    # deliberately NOT marked, so Loop B retries it next cycle.
+    if not final_state.get("error"):
+        _mark_processed(event.id)
+
     log.info(
         "run_pipeline: DONE event=%s outcome=%s alert=%s",
         event.id,
@@ -192,6 +201,18 @@ async def run_pipeline(event: RawEvent) -> AuditorState:
         final_state.get("alert_id"),
     )
     return final_state
+
+
+def _mark_processed(event_id: str) -> None:
+    """Flag a RawEvent as processed so Loop B does not re-draw it. Idempotent."""
+    from app.repositories.unit_of_work import UnitOfWork
+
+    with UnitOfWork() as uow:
+        raw = uow.events.get(event_id)
+        if raw is not None and not raw.processed:
+            raw.processed = True
+            raw.status = "PROCESSED"
+            uow.commit()
 
 
 __all__ = ["run_pipeline", "get_gateway"]

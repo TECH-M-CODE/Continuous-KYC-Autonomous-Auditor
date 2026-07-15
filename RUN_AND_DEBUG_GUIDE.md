@@ -174,21 +174,23 @@ Check `app/repositories/entity_repo.py` for the exact `list()` signature and wha
 
 This is genuinely the biggest chunk of remaining work — plan real time for it, not a five-minute patch. It's also exactly what Sprint 3's Dev 5 track ("Wire real data with React Query... Replace hardcoded page data") called for and what's still outstanding.
 
-### Bug #5 — Audit hash chain is permanently broken by two call sites that bypass it
-**Files:** [app/services/screening.py:142-163](app/services/screening.py), [app/services/ingestion/sanctions_list.py:189-215](app/services/ingestion/sanctions_list.py)
-**Problem:** both files write directly to `uow.audit_log.add(AuditLog(...))` with a hardcoded `prev_hash = "UNCHAINED_SPRINT2"` sentinel, instead of calling `app/services/audit_service.py`'s `append_audit()`, which is the real hash-chaining implementation (genesis hash `"GENESIS"`, real `prev_hash` linking). Both files even say so in their own docstrings: *"Not hash-chained ... real chaining is Dev 3's Sprint 3"* — that migration was called out explicitly in the Sprint 3 plan (*"grep every place Sprints 1–2 wrote audit rows directly ... route them through append()"*) and never finished for these two call sites.
-**Observed effect:** I confirmed this live — after ~15 seconds of the backend running (structuring detector + sanctions adapter firing on schedule), `GET /api/v1/audit/verify` already reports `is_valid: false` with a real `broken_at_hash`, because the very first entry's `prev_hash` is `"UNCHAINED_SPRINT2"` instead of `"GENESIS"`. **The "Verify chain" button — a "never cut" feature per the Sprint 3 plan — will show red the moment you open the demo**, through no fault of anything you did.
-**Fix:** in both `_audit_screened_out()` (screening.py) and `_audit_list_refreshed()` (sanctions_list.py), replace the manual hash computation + `uow.audit_log.add(AuditLog(...))` block with a call to the real function:
+### Bug #5 — Audit hash chain is permanently broken by two call sites that bypass it — **fixed for you in this session**
+**Files:** [app/services/screening.py](app/services/screening.py), [app/services/ingestion/sanctions_list.py](app/services/ingestion/sanctions_list.py)
+**Problem:** both files wrote directly to `uow.audit_log.add(AuditLog(...))` with a hardcoded `prev_hash = "UNCHAINED_SPRINT2"` sentinel, instead of calling `app/services/audit_service.py`'s `append_audit()`, which is the real hash-chaining implementation (genesis hash `"GENESIS"`, real `prev_hash` linking). Both files even said so in their own docstrings: *"Not hash-chained ... real chaining is Dev 3's Sprint 3"* — that migration was called out explicitly in the Sprint 3 plan (*"grep every place Sprints 1–2 wrote audit rows directly ... route them through append()"*) and never finished for these two call sites.
+**Observed effect (before the fix):** confirmed live — after ~15 seconds of the backend running (structuring detector + sanctions adapter firing on schedule), `GET /api/v1/audit/verify` already reported `is_valid: false` with a real `broken_at_hash`, because the very first entry's `prev_hash` was `"UNCHAINED_SPRINT2"` instead of `"GENESIS"`. The "Verify chain" button — a "never cut" feature per the Sprint 3 plan — would show red the moment you opened the demo, through no fault of anything you did.
+**Fix applied:** `_audit_screened_out()` (screening.py) and `_audit_list_refreshed()` (sanctions_list.py) now both call the real `append_audit()` instead of hand-rolling their own hash and sentinel row:
 ```python
 from app.services.audit_service import append_audit
 
 def _audit_screened_out(name: str, context: str) -> None:
     payload = {"name": name, "context": context, "threshold": SCREENING_PASS_THRESHOLD}
     with UnitOfWork() as uow:
-        append_audit(action="screened_out", payload=payload, uow=uow, actor_id="system")
+        append_audit(action="screened_out", payload=payload, uow=uow)
         uow.commit()
 ```
-Same pattern for `_audit_list_refreshed()`. You can then delete the now-unused `UNCHAINED_SENTINEL` constant and the manual `hashlib`/`_compute_entry_hash`-equivalent code in both files.
+Same pattern for `_audit_list_refreshed()`. The now-unused `UNCHAINED_SENTINEL` constant and the manual `hashlib`/`_compute_entry_hash`-equivalent code were removed from both files.
+
+This landed alongside three other audit-chain bugs found the same session (see the stress-test log / commit history around this date): `append_audit()` itself was chaining per-entity instead of as one global ledger, its hash embedded a tz-aware timestamp that doesn't round-trip through SQLite, and its "find the last entry" lookup didn't flush pending writes first (`SessionLocal` is `autoflush=False`) — all three had to be fixed before this one would hold, since a correct global chain with an unchained row spliced into it is still broken.
 
 ### Bug #6a — Vite proxy fails with `ECONNREFUSED ::1:8000` on Node 22 / Windows
 **File:** [frontend/vite.config.js](frontend/vite.config.js) — **already fixed for you in this session.**
