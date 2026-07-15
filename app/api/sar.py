@@ -21,6 +21,7 @@ from app.schemas.sar import (
     SARVersionDTO,
 )
 from app.services.sar_service import get_citations
+from app.models.audit import AuditLog
 
 router = APIRouter(prefix="/sars", tags=["sars"])
 
@@ -119,6 +120,15 @@ async def update_sar(sar_id: str, body: SARUpdateRequest, request: Request):
             [{"citation": c.source, "passage": c.context} for c in body.citations]
         )
         sar.status = "DRAFT"
+        
+        audit = AuditLog(
+            entity_id=sar.entity_id,
+            action="SAR_EDITED",
+            actor="human",
+            detail=f"SAR narrative edited via UI. Bumped to version {sar.version}.",
+            seq=uow.audit_logs._session.query(AuditLog).filter_by(entity_id=sar.entity_id).count() + 1
+        )
+        uow.audit_logs.add(audit)
         uow.commit()
         return success_response(_sar_to_detail(sar), message="SAR draft updated to a new version.")
 
@@ -130,5 +140,38 @@ async def decide_sar(sar_id: str, body: SARDecisionRequest, request: Request):
         if sar is None:
             return _not_found(request, sar_id)
         sar.status = _DECISION_TO_STATUS[body.decision]
+        
+        audit = AuditLog(
+            entity_id=sar.entity_id,
+            action=f"SAR_{body.decision.upper()}",
+            actor="human",
+            detail=f"SAR manually {body.decision.lower()}d via UI with notes: {body.comments[:50]}",
+            seq=uow.audit_logs._session.query(AuditLog).filter_by(entity_id=sar.entity_id).count() + 1
+        )
+        uow.audit_logs.add(audit)
         uow.commit()
         return success_response(_sar_to_detail(sar), message=f"SAR decision recorded: {body.decision}.")
+
+from pydantic import BaseModel
+
+class SARRequestInfoBody(BaseModel):
+    question: str
+
+@router.post("/{sar_id}/request-info", response_model=APIResponse[dict])
+async def request_sar_info(sar_id: str, body: SARRequestInfoBody, request: Request):
+    with UnitOfWork() as uow:
+        sar = uow.sars.get(sar_id)
+        if sar is None:
+            return _not_found(request, sar_id)
+        
+        audit = AuditLog(
+            entity_id=sar.entity_id,
+            action="INFO_REQUESTED",
+            actor="human",
+            detail=f"Information requested: {body.question[:100]}",
+            seq=uow.audit_logs._session.query(AuditLog).filter_by(entity_id=sar.entity_id).count() + 1
+        )
+        uow.audit_logs.add(audit)
+        uow.commit()
+        
+        return success_response({"status": "dispatched"}, message="Investigator dispatched.")

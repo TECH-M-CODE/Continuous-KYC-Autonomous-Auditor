@@ -17,10 +17,21 @@ from app.services.ingestion.base import AdapterRegistry, build_scheduler, poll_u
 from app.services.ingestion.provided_dataset import ProvidedDatasetAdapter
 from app.services.ingestion.sanctions_list import SanctionsListAdapter
 from app.services.ingestion.transactions import TransactionReplayAdapter
+from app.services.ingestion.news_rss import NewsRSSAdapter
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # ── 1. Ensure all DB tables exist (idempotent) ────────────────────────────
+    # Must run before any adapter or route touches the DB.
+    from app.models.base import Base, engine
+    import app.models.entities   # noqa: F401 — register models with Base
+    import app.models.events     # noqa: F401
+    import app.models.risk       # noqa: F401
+    import app.models.sar        # noqa: F401
+    import app.models.audit      # noqa: F401
+    Base.metadata.create_all(bind=engine)
+
     # Adapters are constructed here (not at module import time) since
     # TransactionReplayAdapter loads + sorts the sampled parquet in
     # __init__ -- a real cost that must not happen just from importing
@@ -29,7 +40,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     registry.register(ProvidedDatasetAdapter())
     registry.register(SanctionsListAdapter())
     registry.register(TransactionReplayAdapter())
-    registry.register(inject_adapter)  # shared with app.api.admin's route handler
+    registry.register(NewsRSSAdapter())          # live adverse media (Reuters/GDELT)
+    registry.register(inject_adapter)            # shared with app.api.admin's route handler
 
     scheduler = build_scheduler(registry)
 

@@ -19,6 +19,7 @@ from app.schemas.alerts import (
     InvestigationDTO,
 )
 from app.schemas.traces import DecisionTrace
+from app.models.audit import AuditLog
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -143,6 +144,17 @@ async def act_on_alert(alert_id: str, body: AlertActionRequest, request: Request
         if alert is None:
             return _not_found(request, alert_id)
         alert.status = _ACTION_TO_STATUS[body.action]
+        
+        # Add human action audit log
+        audit = AuditLog(
+            entity_id=alert.entity_id,
+            action=f"ALERT_{body.action.upper()}",
+            actor="human",
+            detail=f"Alert manually {body.action.lower()}d via UI.",
+            seq=uow.audit_logs._session.query(AuditLog).filter_by(entity_id=alert.entity_id).count() + 1
+        )
+        uow.audit_logs.add(audit)
+        
         uow.commit()
         entity = uow.entities.get(alert.entity_id)
         name = entity.name if entity else alert.entity_id

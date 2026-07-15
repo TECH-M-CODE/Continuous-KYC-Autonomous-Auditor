@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from app.schemas import APIResponse, success_response
 from app.services.ingestion.inject import InjectAdapter
+from demo.scenario_engine import run_scenario
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -36,6 +37,32 @@ class InjectResponseData(BaseModel):
     injected: bool
     event_type: str
     title: str
+
+
+class DemoPlayRequest(BaseModel):
+    scenario: str
+    entity_id: str | None = None
+
+
+@router.get("/drill/latest", response_model=APIResponse[dict])
+async def get_latest_drill() -> APIResponse[dict]:
+    # Stub for the drill report to prevent 404s in the frontend
+    return success_response({"status": "no_active_drill"}, message="No active drill.")
+
+
+@router.post("/demo/play", response_model=APIResponse[dict])
+async def play_demo_scenario(body: DemoPlayRequest) -> APIResponse[dict]:
+    try:
+        result = await run_scenario(body.scenario, body.entity_id)
+        return success_response(result, message=f"Scenario {body.scenario} completed successfully.")
+    except ValueError as e:
+        return APIResponse(
+            success=False,
+            message=str(e),
+            data={},
+            error_code="ERR_INVALID_SCENARIO"
+        )
+
 
 
 @router.post("/inject", response_model=APIResponse[InjectResponseData])
