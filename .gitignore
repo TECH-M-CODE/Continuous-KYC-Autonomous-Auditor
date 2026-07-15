@@ -58,9 +58,3 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
-
-# Data generation and notebooks
-data/adverse-media-news/
-data/financial-data/
-*.ipynb
-data/kyc_profiles/*.csv
