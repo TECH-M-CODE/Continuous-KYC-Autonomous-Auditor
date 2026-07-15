@@ -26,9 +26,9 @@ const nodeTypes = {
 const getLayoutedElements = (nodes, edges, direction = 'LR') => {
   const dagreGraph = new dagre.graphlib.Graph();
   dagreGraph.setDefaultEdgeLabel(() => ({}));
-  
+
   // Nodes have a fixed width/height roughly matching the Tailwind classes (w-72 is 288px)
-  const nodeWidth = 288; 
+  const nodeWidth = 288;
   const nodeHeight = 100;
 
   dagreGraph.setGraph({ rankdir: direction, ranksep: 80, nodesep: 100 });
@@ -124,7 +124,7 @@ export const DecisionGraph = ({ trace }) => {
         >
           <Background color="#334155" gap={24} size={2} className="opacity-40" />
           <Controls className="bg-slate-800/80 backdrop-blur border-slate-700 fill-slate-300 shadow-xl rounded-xl overflow-hidden" />
-          <MiniMap 
+          <MiniMap
             nodeColor={(n) => {
               if (n.type === 'event') return '#3b82f6';
               if (n.type === 'screen') return '#a855f7';
@@ -137,16 +137,16 @@ export const DecisionGraph = ({ trace }) => {
             maskColor="rgba(15, 23, 42, 0.6)"
             className="bg-slate-900/80 border border-slate-700/50 rounded-xl overflow-hidden shadow-2xl backdrop-blur-md"
           />
-          
+
           <Panel position="top-right" className="m-4">
-            <button 
+            <button
               onClick={() => setLayoutDirection(prev => prev === 'LR' ? 'TB' : 'LR')}
               className="px-4 py-2 bg-slate-800/80 hover:bg-slate-700 backdrop-blur-md border border-slate-600/50 rounded-xl text-xs uppercase tracking-wider font-bold text-slate-200 transition-all shadow-lg"
             >
               {layoutDirection === 'LR' ? 'Switch to Vertical' : 'Switch to Horizontal'}
             </button>
           </Panel>
-          
+
           {trace.counterfactual && (
             <Panel position="bottom-center" className="mb-8">
               <div className="bg-slate-900/80 backdrop-blur-md border border-brand-500/30 text-slate-300 px-6 py-4 rounded-2xl shadow-2xl shadow-brand-500/10 max-w-2xl text-sm flex items-start gap-4">
@@ -171,14 +171,14 @@ export const DecisionGraph = ({ trace }) => {
               <div className="text-xs font-bold uppercase tracking-widest text-brand-400 mb-2">{selectedNode.data.kind}</div>
               <h3 className="text-xl font-bold text-slate-100 leading-tight">{selectedNode.data.label}</h3>
             </div>
-            <button 
+            <button
               onClick={() => setSelectedNode(null)}
               className="text-slate-500 hover:text-white p-2 bg-slate-800/50 hover:bg-slate-700/50 rounded-full transition-all"
             >
               ×
             </button>
           </div>
-          
+
           <div className="bg-slate-950/50 p-5 rounded-2xl mb-8 border border-slate-800/60 shadow-inner">
             <h4 className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2">
               <div className="w-1.5 h-1.5 rounded-full bg-brand-500"></div>
