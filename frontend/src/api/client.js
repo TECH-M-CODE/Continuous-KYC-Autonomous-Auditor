@@ -67,6 +67,11 @@ export const apiClient = {
     return res.data;
   },
 
+  checkDuplicate: async (name) => {
+    const res = await client.get('/entities/check-duplicate', { params: { name } });
+    return res.data;
+  },
+
   getSARs: async (params = {}) => {
     const res = await client.get('/sars', { params });
     return res.data?.items || res.data || [];

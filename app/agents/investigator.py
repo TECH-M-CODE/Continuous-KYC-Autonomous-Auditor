@@ -79,6 +79,13 @@ def investigator(state: AuditorState, *, gateway) -> AuditorState:
         evidence_summary = "LLM classification unavailable; defaults applied."
         log.warning("investigator: LLM classify degraded for entity=%s", entity_name)
 
+    # Hard override for screening hits: if the sanctions agent found matches, this is a sanctions hit.
+    if state.get("screening_matches"):
+        event_type = "sanctions_hit"
+        severity = 1.0
+        if "defaults applied" in evidence_summary:
+            evidence_summary = f"Watchlist hit confirmed against {len(state['screening_matches'])} list(s)."
+
     tb.add(
         kind="classify",
         label=f"Classified: {event_type} (severity {severity:.2f})",
