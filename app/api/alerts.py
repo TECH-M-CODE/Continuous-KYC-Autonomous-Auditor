@@ -53,6 +53,7 @@ def _parse_trace(trace_json: str | None) -> Optional[DecisionTrace]:
 def _alert_to_summary(alert, entity_name: str) -> AlertSummaryDTO:
     return AlertSummaryDTO(
         id=alert.id,
+        entity_id=alert.entity_id,
         entity_name=entity_name,
         priority=alert.priority.upper(),
         status=alert.status.upper(),

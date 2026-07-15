@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useSSE } from '../hooks/useSSE';
 import { StatusBadge } from '../components/StatusBadge';
-import { Shield, Check, X, Filter, GitMerge, Loader2 } from 'lucide-react';
+import { Shield, Check, X, Filter, GitMerge, Loader2, Activity } from 'lucide-react';
 import { apiClient } from '../api/client';
 
 export const AlertQueue = () => {
@@ -120,7 +120,13 @@ export const AlertQueue = () => {
                       className="hover:bg-slate-800/20 group"
                     >
                       <td className="px-6 py-4">
-                        <div className="font-medium text-slate-200">{alert.entity_name || alert.entity_id}</div>
+                        <Link
+                          to={`/timeline/${alert.entity_id || ''}`}
+                          className="font-medium text-slate-200 hover:text-brand-400 transition-colors flex items-center gap-1.5"
+                        >
+                          <Activity className="w-3.5 h-3.5 text-slate-500" />
+                          {alert.entity_name || alert.entity_id}
+                        </Link>
                         <div className="text-xs text-slate-500 font-mono mt-0.5">{alert.id}</div>
                       </td>
                       <td className="px-6 py-4">

@@ -89,8 +89,8 @@ async def process_event(event: RawEvent) -> None:
     """
     # ----- attempt: LangGraph supervisor (Dev 1 integration point) -----
     try:
-        from app.agents.supervisor import run_supervisor  # noqa: PLC0415
-        await run_supervisor(event)
+        from app.agents.supervisor import run_pipeline  # noqa: PLC0415
+        await run_pipeline(event)
         return
     except (ImportError, AttributeError):
         pass  # Dev 1's graph not merged yet; fall through to heuristic

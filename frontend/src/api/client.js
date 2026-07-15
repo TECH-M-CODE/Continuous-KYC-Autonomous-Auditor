@@ -42,7 +42,8 @@ export const apiClient = {
     return res.data?.trace;
   },
 
-  getAudit: async (entityId = 'ent-881') => {
+  getAudit: async (entityId) => {
+    if (!entityId) return [];
     const res = await client.get(`/audit/${entityId}`);
     return res.data?.items || res.data || [];
   },

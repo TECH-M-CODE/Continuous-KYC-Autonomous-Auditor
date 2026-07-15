@@ -23,6 +23,7 @@ class InvestigationDTO(BaseModel):
 
 class AlertSummaryDTO(BaseModel):
     id: str
+    entity_id: str
     entity_name: str
     priority: AlertPriority
     status: AlertStatus
