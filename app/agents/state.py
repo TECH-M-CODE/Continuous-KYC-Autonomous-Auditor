@@ -25,7 +25,11 @@ class AuditorState(TypedDict, total=False):
     event_id: str                        # RawEvent.id
     event_raw: dict[str, Any]            # parsed JSON from RawEvent.content
 
-    # ── Entity resolution (monitor node) ─────────────────────────────────────
+    # ── News enrichment (news_agent node) ─────────────────────────────────────
+    # {source, source_url, credibility_tier, is_high_credibility, enriched_text}
+    news_context: Optional[dict[str, Any]]
+
+    # ── Entity resolution (entity_agent node) ─────────────────────────────────
     entity_id: Optional[str]
     entity_name: Optional[str]
     entity_risk_score: float

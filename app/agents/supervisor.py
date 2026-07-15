@@ -1,28 +1,30 @@
-"""Supervisor — LangGraph StateGraph wiring all agent nodes.
+"""Supervisor — LangGraph StateGraph wiring all 7 agent nodes.
 
-The graph is compiled once at module import time using ``MemorySaver``
-as the in-process checkpointer. The public interface is ``run_pipeline()``,
-which Loop B calls for every unprocessed RawEvent.
+Sprint 4 refactor: monitor's entity-resolution and screening responsibilities
+have been extracted into dedicated agents. The new pipeline is:
+
+    monitor → news_agent → entity_agent → sanctions_agent
+           → resolver → investigator → reporter
 
 Node routing (conditional edges)
 ---------------------------------
+    entity_agent  ──► _route_after_entity  ──► "screened_out" → END
+                                            └──► sanctions_agent
 
-    monitor ──► route_after_monitor ──► "screened_out" → END
-                                    └──► resolver
+    sanctions_agent ──► _route_after_sanctions ──► "screened_out" → END
+                                               └──► resolver
 
-    resolver ──► route_after_resolver ──► "dismissed"     → END
-                                      ├──► "review_queued" → END
-                                      └──► investigator
+    resolver ──► _route_after_resolver ──► "dismissed"     → END
+                                       ├──► "review_queued" → END
+                                       └──► investigator
 
     investigator ──► reporter ──► END
 
-Error path: if any node sets ``state["error"]``, the graph routes to END
-immediately rather than crashing. The RawEvent stays unprocessed so Loop B
-retries it next cycle.
+Error path: if any node sets state["error"], the graph routes to END
+immediately. The RawEvent stays unprocessed so Loop B retries next cycle.
 
-LLM Gateway is constructed once per process and injected into the nodes that
-need it via ``functools.partial``. This keeps nodes unit-testable by
-accepting ``gateway`` as a kwarg.
+LLM Gateway is constructed once per process and injected into the nodes
+that need it via functools.partial. This keeps nodes unit-testable.
 """
 
 from __future__ import annotations
@@ -37,10 +39,13 @@ from langgraph.graph import StateGraph, END
 
 from app.agents.state import AuditorState
 from app.agents.monitor import monitor
+from app.agents.news_agent import news_agent
+from app.agents.entity_agent import entity_agent
+from app.agents.sanctions_agent import sanctions_agent
 from app.agents.resolver import resolver
 from app.agents.investigator import investigator
 from app.agents.reporter import reporter
-from app.infrastructure.gemini_client import build_client
+from app.infrastructure.nvidia_client import build_client
 from app.infrastructure.llm_gateway import LLMGateway
 from app.models.events import RawEvent
 
@@ -63,16 +68,22 @@ def get_gateway() -> LLMGateway:
 
 # ── Routing functions ────────────────────────────────────────────────────────
 
-def _route_after_monitor(state: AuditorState) -> str:
-    if state.get("error"):
+def _route_after_entity(state: AuditorState) -> str:
+    """Route to END if entity could not be resolved, otherwise to sanctions_agent."""
+    if state.get("error") or state.get("final_outcome") == "screened_out":
         return END
-    final = state.get("final_outcome", "")
-    if final == "screened_out":
+    return "sanctions_agent"
+
+
+def _route_after_sanctions(state: AuditorState) -> str:
+    """Route to END if no watchlist matches, otherwise to resolver."""
+    if state.get("error") or state.get("final_outcome") == "screened_out":
         return END
     return "resolver"
 
 
 def _route_after_resolver(state: AuditorState) -> str:
+    """Route based on confidence band."""
     if state.get("error"):
         return END
     final = state.get("final_outcome", "")
@@ -84,35 +95,55 @@ def _route_after_resolver(state: AuditorState) -> str:
 # ── Graph construction ────────────────────────────────────────────────────────
 
 def _build_graph(gw: LLMGateway) -> Any:
-    """Build and compile the LangGraph StateGraph with injected gateway."""
-    # Partially apply gateway so nodes remain callable(state) -> state
-    _resolver = functools.partial(resolver, gateway=gw)
+    """Build and compile the 7-node LangGraph StateGraph with injected gateway."""
+    # Partially apply gateway so nodes remain callable(state) → state
+    _resolver    = functools.partial(resolver,    gateway=gw)
     _investigator = functools.partial(investigator, gateway=gw)
-    _reporter = functools.partial(reporter, gateway=gw)
+    _reporter    = functools.partial(reporter,    gateway=gw)
 
     graph = StateGraph(AuditorState)
 
-    graph.add_node("monitor", monitor)
-    graph.add_node("resolver", _resolver)
-    graph.add_node("investigator", _investigator)
-    graph.add_node("reporter", _reporter)
+    # ── Register all 7 nodes ─────────────────────────────────────────────────
+    graph.add_node("monitor",          monitor)         # parse + trace init
+    graph.add_node("news_agent",       news_agent)      # source credibility enrichment
+    graph.add_node("entity_agent",     entity_agent)    # fuzzy entity resolution
+    graph.add_node("sanctions_agent",  sanctions_agent) # watchlist fuzzy screening
+    graph.add_node("resolver",         _resolver)       # LLM verdict + confidence blend
+    graph.add_node("investigator",     _investigator)   # classify + risk scoring
+    graph.add_node("reporter",         _reporter)       # SAR + alert + audit
 
+    # ── Entry point ──────────────────────────────────────────────────────────
     graph.set_entry_point("monitor")
 
-    graph.add_conditional_edges("monitor", _route_after_monitor, {
-        "resolver": "resolver",
-        END: END,
-    })
+    # ── Linear edges (no branching needed) ──────────────────────────────────
+    graph.add_edge("monitor",     "news_agent")
+    graph.add_edge("news_agent",  "entity_agent")
 
-    graph.add_conditional_edges("resolver", _route_after_resolver, {
-        "investigator": "investigator",
-        END: END,
-    })
+    # ── Conditional edges ────────────────────────────────────────────────────
+    graph.add_conditional_edges(
+        "entity_agent",
+        _route_after_entity,
+        {"sanctions_agent": "sanctions_agent", END: END},
+    )
+
+    graph.add_conditional_edges(
+        "sanctions_agent",
+        _route_after_sanctions,
+        {"resolver": "resolver", END: END},
+    )
+
+    graph.add_conditional_edges(
+        "resolver",
+        _route_after_resolver,
+        {"investigator": "investigator", END: END},
+    )
 
     graph.add_edge("investigator", "reporter")
-    graph.add_edge("reporter", END)
+    graph.add_edge("reporter",     END)
 
-    return graph.compile()
+    compiled = graph.compile()
+    log.info("LangGraph compiled — 7 nodes: monitor→news→entity→sanctions→resolver→investigator→reporter")
+    return compiled
 
 
 _compiled_graph: Any = None
@@ -128,7 +159,7 @@ def _get_graph() -> Any:
 # ── Public entry point ────────────────────────────────────────────────────────
 
 async def run_pipeline(event: RawEvent) -> AuditorState:
-    """Process one RawEvent through the full agent graph.
+    """Process one RawEvent through the full 7-node agent graph.
 
     This is the ``handler`` Loop B passes to ``poll_unprocessed_events``.
     It is async so it can live in the FastAPI event loop alongside the
@@ -146,19 +177,25 @@ async def run_pipeline(event: RawEvent) -> AuditorState:
         event_raw = {"text": event.content or "", "source": "unknown"}
 
     initial_state: AuditorState = {
-        "event_id": event.id,
-        "event_raw": event_raw,
-        "entity_id": None,
-        "entity_name": None,
-        "entity_risk_score": 0.0,
-        "entity_jurisdiction": None,
-        "entity_persons": [],
-        "match_score": 0.0,
-        "screening_matches": [],
+        "event_id":             event.id,
+        "event_raw":            event_raw,
+        # news_agent
+        "news_context":         None,
+        # entity_agent
+        "entity_id":            None,
+        "entity_name":          None,
+        "entity_risk_score":    0.0,
+        "entity_jurisdiction":  None,
+        "entity_persons":       [],
+        # sanctions_agent
+        "match_score":          0.0,
+        "screening_matches":    [],
+        # resolver
         "llm_verdict_confidence": None,
         "llm_degraded": False,
         "confidence": 0.0,
         "band": "dismiss",
+        # investigator
         "event_type": None,
         "severity": 0.0,
         "jurisdiction_factor": 1.0,
@@ -168,11 +205,14 @@ async def run_pipeline(event: RawEvent) -> AuditorState:
         "risk_event_id": None,
         "evidence": [],
         "investigation_summary": None,
-        "alert_id": None,
-        "sar_id": None,
-        "trace": None,  # TraceBuilder created inside monitor
-        "final_outcome": "",
-        "error": None,
+        # reporter
+        "alert_id":             None,
+        "sar_id":               None,
+        # trace (TraceBuilder created inside monitor)
+        "trace":                None,
+        # routing
+        "final_outcome":        "",
+        "error":                None,
     }
 
     graph = _get_graph()
@@ -195,10 +235,11 @@ async def run_pipeline(event: RawEvent) -> AuditorState:
         _mark_processed(event.id)
 
     log.info(
-        "run_pipeline: DONE event=%s outcome=%s alert=%s",
+        "run_pipeline: DONE event=%s outcome=%s alert=%s sar=%s",
         event.id,
         final_state.get("final_outcome"),
         final_state.get("alert_id"),
+        final_state.get("sar_id"),
     )
     return final_state
 
