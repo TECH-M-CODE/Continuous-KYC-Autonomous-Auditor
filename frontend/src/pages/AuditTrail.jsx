@@ -65,7 +65,7 @@ export const AuditTrail = () => {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
               <History className="w-6 h-6 text-brand-400" />
               Immutable Audit Trail
             </h1>

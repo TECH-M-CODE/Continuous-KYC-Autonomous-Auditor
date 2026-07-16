@@ -38,7 +38,7 @@ export const Layout = () => {
     { name: 'Entity Timeline',  path: '/timeline',  icon: Activity },
     { name: 'SAR Review',       path: '/sar',       icon: FileText },
     { name: 'Audit Trail',      path: '/audit',     icon: History },
-    { name: 'Admin Watchlist',  path: '/watchlist', icon: ShieldAlert },
+    { name: 'Entities & Watchlist', path: '/watchlist', icon: ShieldAlert },
   ];
 
   return (

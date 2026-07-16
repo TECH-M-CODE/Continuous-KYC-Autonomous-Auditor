@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { ShieldAlert, Zap, Search, ToggleLeft, ToggleRight, Loader2, X, TrendingUp } from 'lucide-react';
+import { ShieldAlert, Zap, Search, ToggleLeft, ToggleRight, Loader2, X, TrendingUp, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { StatusBadge } from '../components/StatusBadge';
 import { DetectionHealth } from '../components/DetectionHealth';
 import { PipelineProgress } from '../components/PipelineProgress';
@@ -30,9 +30,26 @@ export const AdminWatchlist = () => {
   const [isInjecting, setIsInjecting] = useState(false);
   const [progress, setProgress] = useState({ open: false, count: 1, name: '' });
 
+  // Add Customer States
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [formData, setFormData] = useState({ name: '', jurisdiction: '', sector: '', type: 'COMPANY' });
+  const [duplicateMatches, setDuplicateMatches] = useState([]);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [isChecking, setIsChecking] = useState(false);
+  const [verificationResult, setVerificationResult] = useState(null);
+
+  const addCustomerMutation = useMutation({
+    mutationFn: apiClient.addCustomer,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['watchlist'] });
+      setIsModalOpen(false);
+      setFormData({ name: '', jurisdiction: '', sector: '', type: 'COMPANY' });
+    },
+  });
+
   const { data: entities = [], isLoading } = useQuery({
     queryKey: ['watchlist'],
-    queryFn: apiClient.getWatchlist,
+    queryFn: () => apiClient.getWatchlist({ limit: 100 }),
   });
 
   const openInjectModal = (entity) => {
@@ -97,13 +114,20 @@ export const AdminWatchlist = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
             <ShieldAlert className="w-6 h-6 text-brand-400" />
-            Admin Watchlist
+            Entities & Watchlist
           </h1>
-          <p className="text-sm text-slate-500 mt-0.5">Monitor entities and inject synthetic events for testing.</p>
+          <p className="text-sm text-slate-500 mt-0.5">Monitor entities, onboard customers, and inject synthetic events.</p>
         </div>
-        <div className="relative">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white font-medium rounded-lg transition-colors shadow-lg cursor-pointer"
+          >
+            Onboard Customer
+          </button>
+          <div className="relative">
           <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
@@ -117,6 +141,7 @@ export const AdminWatchlist = () => {
               <X className="w-3.5 h-3.5" />
             </button>
           )}
+        </div>
         </div>
       </div>
 
@@ -312,6 +337,222 @@ export const AdminWatchlist = () => {
         entityName={progress.name}
         onClose={() => setProgress(p => ({ ...p, open: false }))}
       />
+
+      {/* Verification Result Popup */}
+      {verificationResult && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[70]" onClick={() => setVerificationResult(null)}>
+          <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-sm p-8 shadow-2xl text-center transform scale-100 transition-transform">
+            {verificationResult.status === 'SAFE' ? (
+              <div className="mx-auto w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mb-6">
+                <ShieldCheck className="w-10 h-10 text-emerald-400" />
+              </div>
+            ) : (
+              <div className="mx-auto w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mb-6">
+                <ShieldAlert className="w-10 h-10 text-red-400" />
+              </div>
+            )}
+            
+            <h2 className={`text-2xl font-bold mb-2 ${verificationResult.status === 'SAFE' ? 'text-emerald-400' : 'text-red-400'}`}>
+              {verificationResult.status === 'SAFE' ? 'Customer is Safe' : 'Customer At Risk'}
+            </h2>
+            
+            <p className="text-slate-300 mb-8">
+              Existing risk profile is <strong className="text-slate-100">{verificationResult.band}</strong>. No new profile was created.
+            </p>
+            
+            <button
+              onClick={() => setVerificationResult(null)}
+              className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white font-medium rounded-lg transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate Check Modal */}
+      {showDuplicateModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60]">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-lg p-6 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4 text-orange-400">
+              <AlertTriangle className="w-6 h-6" />
+              <h2 className="text-xl font-bold">Potential Duplicate Detected</h2>
+            </div>
+            <p className="text-slate-300 mb-6">
+              We found existing records matching this name. Is this the same person/entity?
+            </p>
+            
+            <div className="space-y-3 mb-6 max-h-60 overflow-y-auto">
+              {duplicateMatches.map(match => (
+                <div key={match.id} className="bg-slate-800 p-4 rounded-lg border border-slate-700 flex justify-between items-center">
+                  <div>
+                    <p className="font-semibold text-slate-100">{match.name}</p>
+                    <p className="text-sm text-slate-400">{match.role || match.type}</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const isSafe = ['LOW', 'MEDIUM'].includes(match.risk_band);
+                      setVerificationResult({ status: isSafe ? 'SAFE' : 'AT_RISK', band: match.risk_band });
+                      setShowDuplicateModal(false);
+                      setIsModalOpen(false);
+                    }}
+                    className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium rounded-md transition-colors"
+                  >
+                    Yes, this is them
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
+              <button
+                onClick={() => setShowDuplicateModal(false)}
+                className="px-4 py-2 text-slate-300 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const finalName = formData.type === 'PERSON' 
+                    ? `${formData.firstName || ''} ${formData.lastName || ''}`.trim() 
+                    : formData.name;
+                  setShowDuplicateModal(false);
+                  addCustomerMutation.mutate({ ...formData, name: finalName });
+                }}
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-lg transition-colors"
+              >
+                No, create new customer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isModalOpen && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 animate-fade-in">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-md p-6 shadow-2xl animate-slide-up">
+            <h2 className="text-xl font-bold text-slate-100 mb-4">Onboard Customer</h2>
+            
+            <div className="flex gap-4 mb-6">
+              <label className="flex items-center gap-2 text-slate-300">
+                <input 
+                  type="radio" 
+                  name="customerType" 
+                  checked={formData.type === 'PERSON'} 
+                  onChange={() => setFormData({ ...formData, type: 'PERSON', name: '', firstName: '', lastName: '' })}
+                  className="text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-600"
+                />
+                Person
+              </label>
+              <label className="flex items-center gap-2 text-slate-300">
+                <input 
+                  type="radio" 
+                  name="customerType" 
+                  checked={formData.type !== 'PERSON'} 
+                  onChange={() => setFormData({ ...formData, type: 'COMPANY', name: '', firstName: '', lastName: '' })}
+                  className="text-brand-500 focus:ring-brand-500 bg-slate-800 border-slate-600"
+                />
+                Company
+              </label>
+            </div>
+
+            <div className="space-y-4">
+              {formData.type === 'PERSON' ? (
+                <>
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-slate-400 mb-1">First Name</label>
+                      <input
+                        type="text"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-brand-500"
+                        value={formData.firstName || ''}
+                        onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                        placeholder="e.g. Khushi"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-slate-400 mb-1">Last Name</label>
+                      <input
+                        type="text"
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-brand-500"
+                        value={formData.lastName || ''}
+                        onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                        placeholder="e.g. Katiyar"
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-slate-400 mb-1">Company Name</label>
+                  <input
+                    type="text"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-brand-500"
+                    value={formData.name || ''}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="e.g. Acme Corp"
+                  />
+                </div>
+              )}
+              
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">Jurisdiction / Country</label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-brand-500 transition-colors"
+                  value={formData.jurisdiction}
+                  onChange={(e) => setFormData({ ...formData, jurisdiction: e.target.value })}
+                  placeholder="e.g. US, UK, India"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-400 mb-1">Sector / Industry</label>
+                <input
+                  type="text"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 focus:outline-none focus:border-brand-500 transition-colors"
+                  value={formData.sector}
+                  onChange={(e) => setFormData({ ...formData, sector: e.target.value })}
+                  placeholder="e.g. Finance, Technology"
+                />
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 text-slate-300 hover:text-white transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  const finalName = formData.type === 'PERSON' 
+                    ? `${formData.firstName || ''} ${formData.lastName || ''}`.trim() 
+                    : formData.name;
+                  
+                  setIsChecking(true);
+                  try {
+                    const matches = await apiClient.checkDuplicate(finalName);
+                    if (matches && matches.length > 0) {
+                      setDuplicateMatches(matches);
+                      setShowDuplicateModal(true);
+                    } else {
+                      addCustomerMutation.mutate({ ...formData, name: finalName });
+                    }
+                  } catch(e) {
+                    addCustomerMutation.mutate({ ...formData, name: finalName });
+                  } finally {
+                    setIsChecking(false);
+                  }
+                }}
+                disabled={addCustomerMutation.isPending || isChecking || (formData.type === 'PERSON' ? (!formData.firstName && !formData.lastName) : !formData.name)}
+                className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white font-medium rounded-lg transition-colors cursor-pointer"
+              >
+                {addCustomerMutation.isPending || isChecking ? 'Adding...' : 'Onboard Customer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

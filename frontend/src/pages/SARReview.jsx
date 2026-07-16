@@ -122,20 +122,20 @@ export const SARReview = () => {
 
   const editMutation = useMutation({
     mutationFn: (narrative) => apiClient.editSAR({ id, narrative }),
-    onSuccess: () => { queryClient.invalidateQueries(['sar', id]); setIsEditing(false); addAuditEntry('SAR_EDITED', 'Narrative updated'); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['sar', id] }); setIsEditing(false); addAuditEntry('SAR_EDITED', 'Narrative updated'); },
   });
   const approveMutation = useMutation({
     mutationFn: (comments) => apiClient.approveSAR({ id, comments }),
-    onSuccess: () => { queryClient.invalidateQueries(['sar', id]); addAuditEntry('SAR_APPROVED', 'Filed to regulatory'); setActionNotes(''); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['sar', id] }); addAuditEntry('SAR_APPROVED', 'Filed to regulatory'); setActionNotes(''); },
   });
   const rejectMutation = useMutation({
     mutationFn: (comments) => apiClient.rejectSAR({ id, comments }),
-    onSuccess: () => { queryClient.invalidateQueries(['sar', id]); addAuditEntry('SAR_REJECTED', 'Rejected by officer'); setActionNotes(''); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['sar', id] }); addAuditEntry('SAR_REJECTED', 'Rejected by officer'); setActionNotes(''); },
   });
   const requestInfoMutation = useMutation({
     mutationFn: (q) => apiClient.requestSARInfo({ id, question: q }),
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries(['sar', id]);
+      queryClient.invalidateQueries({ queryKey: ['sar', id] });
       addAuditEntry('INFO_REQUESTED', 'Investigator answered a follow-up question');
       setQaHistory(prev => [
         { q: variables, a: data?.answer || 'No answer returned.', degraded: !!data?.degraded, time: new Date().toLocaleTimeString() },
@@ -212,7 +212,7 @@ export const SARReview = () => {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
               <FileText className="w-6 h-6 text-brand-400" />
               SAR Review
             </h1>

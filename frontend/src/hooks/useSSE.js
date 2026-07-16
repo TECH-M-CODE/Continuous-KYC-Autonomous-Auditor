@@ -37,9 +37,20 @@ export const useSSE = (url = '/api/v1/stream') => {
     const handleEvent = (type) => (e) => {
       try {
         const data = JSON.parse(e.data);
-        const eventObj = { type, data, timestamp: new Date() };
+        const eventObj = { id: Date.now() + Math.random(), type, data, timestamp: new Date() };
         setLastEvent(eventObj);
-        setEvents((prev) => [eventObj, ...prev].slice(0, 100)); // Keep last 100
+        setEvents((prev) => {
+          // StrictMode protection: deduplicate identical payloads occurring extremely close in time
+          if (prev.length > 0) {
+            const last = prev[0];
+            if (last.type === type && JSON.stringify(last.data) === JSON.stringify(data)) {
+              if (new Date().getTime() - last.timestamp.getTime() < 1000) {
+                return prev;
+              }
+            }
+          }
+          return [eventObj, ...prev].slice(0, 100);
+        }); // Keep last 100
 
         // Invalidate specific queries based on event type to trigger React Query refetch
         if (type === 'alert.new' || type === 'alert.updated') {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useSSE } from '../hooks/useSSE';
 import { StatusBadge } from '../components/StatusBadge';
@@ -18,8 +18,8 @@ const PRIORITY_STYLE = {
   LOW:      { border: 'border-l-emerald-500',dot: 'bg-emerald-400',glow: 'shadow-emerald-500/10' },
 };
 
-const timeAgo = (iso) => {
-  const d = Math.floor((Date.now() - new Date(iso)) / 60000);
+const timeAgo = (iso, now = Date.now()) => {
+  const d = Math.floor((now - new Date(iso)) / 60000);
   if (d < 1) return 'just now';
   if (d < 60) return `${d}m ago`;
   return `${Math.floor(d / 60)}h ago`;
@@ -31,6 +31,12 @@ export const AlertQueue = () => {
   const [toast, setToast] = useState(null);
   const [expanded, setExpanded] = useState(null);
   const [selected, setSelected] = useState(new Set());
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   const { data: alerts = [], isLoading } = useQuery({
     queryKey: ['alerts'],
@@ -38,13 +44,13 @@ export const AlertQueue = () => {
     refetchInterval: 10_000,
     // Keep the current rows on screen while a refetch (triggered by an incoming
     // SSE alert) is in flight — prevents the table from blanking for a beat.
-    placeholderData: (prev) => prev,
+    placeholderData: keepPreviousData,
   });
 
   const queryClient = useQueryClient();
   const actionMutation = useMutation({
     mutationFn: apiClient.actionAlert,
-    onSuccess: () => queryClient.invalidateQueries(['alerts']),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
   });
 
   const handleAction = (id, action) =>
@@ -58,7 +64,7 @@ export const AlertQueue = () => {
   useEffect(() => {
     if (lastEvent?.type === 'alert.new') {
       setToast(lastEvent.data);
-      queryClient.invalidateQueries(['alerts']);
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
       const t = setTimeout(() => setToast(null), 6000);
       return () => clearTimeout(t);
     }
@@ -117,7 +123,7 @@ export const AlertQueue = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
             <Bell className="w-6 h-6 text-brand-400" />
             Alert Queue
           </h1>
@@ -243,7 +249,7 @@ export const AlertQueue = () => {
                             )}>{alert.status}</span>
                           </td>
                           <td className="px-4 py-3 text-xs text-slate-500">
-                            {timeAgo(alert.created_at)}
+                            {timeAgo(alert.created_at, now)}
                           </td>
                           <td className="px-4 py-3 text-right" onClick={e => e.stopPropagation()}>
                             <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">

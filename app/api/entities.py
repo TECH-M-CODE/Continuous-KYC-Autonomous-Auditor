@@ -1,12 +1,17 @@
 """Entities router — Sprint 4: real DB reads replacing the Sprint 1 mock store."""
 from typing import Optional
+import csv
+import os
+import uuid
+from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Body
 from fastapi.responses import JSONResponse
 
 from app.api.deps import PaginationParams, pagination_params
 from app.repositories.unit_of_work import UnitOfWork
 from app.schemas import APIResponse, PaginatedData, paginate, success_response
+from app.models.entities import Entity
 from app.schemas.entities import (
     DecisionEdgeDTO,
     DecisionNodeData,
@@ -219,3 +224,61 @@ async def get_entity_graph(entity_id: str, request: Request):
         if entity is None:
             return _not_found(request, entity_id)
         return success_response(_build_entity_graph(entity, uow))
+
+@router.get("/check-duplicate/name")
+async def check_duplicate(name: str = Query(...)):
+    with UnitOfWork() as uow:
+        # Very simple check
+        entities = uow.entities.list()
+        matches = [e for e in entities if name.lower() in e.name.lower()]
+        summaries = [_entity_to_summary(e) for e in matches]
+    return success_response(summaries)
+
+
+@router.post("/onboard")
+async def onboard_customer(
+    name: str = Body(...),
+    type: str = Body(...),
+    jurisdiction: str = Body(None),
+    sector: str = Body(None),
+):
+    entity_id = f"ent-{uuid.uuid4().hex[:12]}"
+    now = datetime.utcnow()
+    
+    # 1. Insert into DB
+    with UnitOfWork() as uow:
+        new_entity = Entity(
+            id=entity_id,
+            name=name,
+            entity_type=type.upper(),
+            jurisdiction=jurisdiction,
+            industry=sector,
+            risk_score=10,
+            risk_band="LOW",
+            created_at=now,
+            updated_at=now,
+        )
+        uow.entities.add(new_entity)
+        uow.commit()
+    
+    # 2. Append to CSV
+    csv_path = os.path.join("data", "kyc_profiles", "dataset_profiles.csv")
+    if os.path.exists(csv_path):
+        with open(csv_path, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            # headers: customer_id,entity_name,entity_type,country,industry,executives,beneficial_owners,registration_country,countries_of_operation,risk_score,risk_level,adverse_media_count,financial_fraud_count,sanctions_count,regulatory_mentions,latest_incident_date,existing_alerts,risk_indicators,last_review_date,monitoring_status,kyc_status
+            writer.writerow([
+                entity_id, name, type.capitalize(), jurisdiction or "", sector or "", 
+                "", "", jurisdiction or "", jurisdiction or "", 
+                "10", "LOW", "0", "0", "0", "0", 
+                "", "0", "", now.isoformat(), "Active", "Verified"
+            ])
+            
+    return success_response({
+        "id": entity_id,
+        "name": name,
+        "type": type,
+        "risk_score": 10,
+        "risk_band": "LOW"
+    })
+

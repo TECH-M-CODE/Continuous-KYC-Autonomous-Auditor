@@ -230,6 +230,7 @@ def reporter(state: AuditorState, *, gateway) -> AuditorState:
             "priority": priority,
             "band": risk_band,
             "confidence": state.get("confidence"),
+            "risk_score": state.get("new_risk_score"),
         })
         # Drives the live risk-score update on the Entity Timeline panel: useSSE
         # invalidates the ['entity'] query on this event, so the score/timeline

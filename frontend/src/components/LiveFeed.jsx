@@ -26,36 +26,16 @@ function timeStr() {
  * Renders up to MAX_EVENTS entries, newest at top, with slide-in animation.
  */
 export const LiveFeed = ({ className = '', maxHeight = 320, showHeader = true }) => {
-  const { lastEvent, connected } = useSSE();
-  const [events, setEvents] = useState([]);
+  const { connected, events } = useSSE();
   const listRef = useRef(null);
-
-  // Seed with a startup message
-  useEffect(() => {
-    setEvents([{
-      id: 'seed',
-      type: 'pipeline.start',
-      message: 'SentinelAI pipeline connected — monitoring active.',
-      time: timeStr(),
-    }]);
-  }, []);
-
-  useEffect(() => {
-    if (!lastEvent) return;
-    const entry = {
-      id: `${Date.now()}-${Math.random()}`,
-      type: lastEvent.type || 'default',
-      message: buildMessage(lastEvent),
-      time: timeStr(),
-    };
-    setEvents(prev => [entry, ...prev].slice(0, MAX_EVENTS));
-  }, [lastEvent]);
 
   function buildMessage(evt) {
     const d = evt.data;
     if (!d) return evt.type;
     if (evt.type === 'alert.new')
-      return `New ${d.priority || ''} alert — ${d.entity_name || d.entity_id || 'unknown entity'}`;
+      return `New ${d.priority || ''} alert — ${d.entity_name || d.entity_id || 'unknown entity'}${d.risk_score ? ` (Score: ${d.risk_score})` : ''}`;
+    if (evt.type === 'entity.updated')
+      return `Entity updated — ${d.entity_name || d.entity_id || 'unknown entity'}${d.new_risk_score ? ` (New Score: ${d.new_risk_score})` : ''}`;
     if (evt.type === 'pipeline.done')
       return `Pipeline done: ${d.entity_name || d.outcome || ''}`;
     return d.message || d.text || JSON.stringify(d).slice(0, 80);
@@ -103,9 +83,11 @@ export const LiveFeed = ({ className = '', maxHeight = 320, showHeader = true })
                 <Icon className={clsx('w-3 h-3', meta.color)} />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs text-slate-300 truncate">{evt.message}</p>
+                <p className="text-xs text-slate-300 truncate">{buildMessage(evt)}</p>
               </div>
-              <span className="text-xs text-slate-600 font-mono shrink-0">{evt.time}</span>
+              <span className="text-xs text-slate-600 font-mono shrink-0">
+                {evt.timestamp.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
             </div>
           );
         })}

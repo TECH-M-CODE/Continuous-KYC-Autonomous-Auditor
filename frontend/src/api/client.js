@@ -63,6 +63,16 @@ export const apiClient = {
     return res.data;
   },
 
+  addCustomer: async (data) => {
+    const res = await client.post('/entities/onboard', data);
+    return res.data;
+  },
+
+  checkDuplicate: async (name) => {
+    const res = await client.get('/entities/check-duplicate/name', { params: { name } });
+    return res.data;
+  },
+
   getSAR: async (id) => {
     const res = await client.get(`/sars/${id}`);
     return res.data;
