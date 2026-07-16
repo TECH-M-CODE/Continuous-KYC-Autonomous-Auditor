@@ -28,6 +28,9 @@ class AlertSummaryDTO(BaseModel):
     priority: AlertPriority
     status: AlertStatus
     created_at: datetime
+    risk_score: Optional[float] = None
+    source: Optional[str] = None
+    summary: Optional[str] = None
 
 
 class AlertDetailDTO(AlertSummaryDTO):

@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FileText, CheckCircle, XCircle, Edit3, BookOpen,
   MessageSquare, AlertTriangle, Loader2, Save, ChevronRight,
-  Clock, Check
+  Clock, Check, ChevronDown, Archive
 } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { EvidenceBundle } from '../components/EvidenceBundle';
@@ -43,6 +43,33 @@ function StatusStepper({ current }) {
   );
 }
 
+function SarLink({ s, currentId }) {
+  return (
+    <Link
+      to={`/sar/${s.id}`}
+      className={clsx(
+        'block px-2.5 py-2 rounded-xl text-xs transition-all border',
+        s.id === currentId
+          ? 'bg-brand-500/15 border-brand-500/30 text-brand-300'
+          : 'border-transparent text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+      )}
+    >
+      <p className="font-medium truncate">{s.entity_name || s.alert_id || s.id.slice(0, 12)}</p>
+      <div className="flex items-center gap-1.5 mt-0.5">
+        <span className={clsx(
+          'px-1.5 py-0.5 rounded text-[10px] font-medium',
+          s.status === 'DRAFT'            ? 'text-amber-400 bg-amber-500/10' :
+          s.status === 'PENDING_APPROVAL' ? 'text-brand-400 bg-brand-500/10' :
+          s.status === 'APPROVED'         ? 'text-emerald-400 bg-emerald-500/10' :
+          s.status === 'REJECTED'         ? 'text-red-400 bg-red-500/10' :
+                                            'text-slate-400 bg-slate-800'
+        )}>{s.status}</span>
+        <span className="text-slate-600">v{s.version}</span>
+      </div>
+    </Link>
+  );
+}
+
 export const SARReview = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -54,12 +81,18 @@ export const SARReview = () => {
   const [question, setQuestion]           = useState('');
   const [selectedCitation, setSelectedCitation] = useState(null);
   const [optimisticAudit, setOptimisticAudit]   = useState([]);
+  const [showCompleted, setShowCompleted]       = useState(false);
 
   // SAR list for sidebar
   const { data: allSars = [] } = useQuery({
     queryKey: ['sars', 'all'],
     queryFn: () => apiClient.getSARs({ limit: 50 }),
   });
+
+  // Split the queue: drafts still needing a human decision stay up top; reviewed
+  // SARs (approved / rejected / filed) move to a collapsed "Completed" archive.
+  const activeSars = allSars.filter(s => ['DRAFT', 'PENDING_APPROVAL'].includes(s.status));
+  const completedSars = allSars.filter(s => !['DRAFT', 'PENDING_APPROVAL'].includes(s.status));
 
   // Latest redirect
   const { data: latestSars = [], isLoading: isLatestLoading } = useQuery({
@@ -132,33 +165,35 @@ export const SARReview = () => {
 
       {/* ── SAR List Sidebar ── */}
       <div className="w-52 shrink-0 glass-card rounded-2xl p-3 flex flex-col overflow-hidden">
-        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-1">SARs</h2>
-        <div className="flex-1 overflow-y-auto space-y-1">
-          {allSars.map(s => (
-            <Link
-              key={s.id}
-              to={`/sar/${s.id}`}
-              className={clsx(
-                'block px-2.5 py-2 rounded-xl text-xs transition-all border',
-                s.id === id
-                  ? 'bg-brand-500/15 border-brand-500/30 text-brand-300'
-                  : 'border-transparent text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-1">
+          Pending Review
+        </h2>
+        <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
+          {activeSars.map(s => <SarLink key={s.id} s={s} currentId={id} />)}
+          {activeSars.length === 0 && (
+            <p className="text-xs text-slate-600 text-center py-6">No SARs pending review</p>
+          )}
+
+          {/* Completed SARs — reviewed drafts are archived here, out of the way. */}
+          {completedSars.length > 0 && (
+            <div className="pt-3 mt-2 border-t border-slate-800">
+              <button
+                onClick={() => setShowCompleted(v => !v)}
+                className="w-full flex items-center justify-between px-1 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider hover:text-slate-300 transition-colors"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Archive className="w-3.5 h-3.5" />
+                  Completed ({completedSars.length})
+                </span>
+                {showCompleted ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+              </button>
+              {showCompleted && (
+                <div className="space-y-1 mt-1">
+                  {completedSars.map(s => <SarLink key={s.id} s={s} currentId={id} />)}
+                </div>
               )}
-            >
-              <p className="font-medium truncate">{s.entity_name || s.alert_id || s.id.slice(0, 12)}</p>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <span className={clsx(
-                  'px-1.5 py-0.5 rounded text-[10px] font-medium',
-                  s.status === 'DRAFT'            ? 'text-amber-400 bg-amber-500/10' :
-                  s.status === 'PENDING_APPROVAL' ? 'text-brand-400 bg-brand-500/10' :
-                  s.status === 'APPROVED'         ? 'text-emerald-400 bg-emerald-500/10' :
-                                                    'text-slate-400 bg-slate-800'
-                )}>{s.status}</span>
-                <span className="text-slate-600">v{s.version}</span>
-              </div>
-            </Link>
-          ))}
-          {allSars.length === 0 && <p className="text-xs text-slate-600 text-center py-6">No SARs yet</p>}
+            </div>
+          )}
         </div>
       </div>
 

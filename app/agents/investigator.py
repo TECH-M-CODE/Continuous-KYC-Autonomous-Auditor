@@ -88,125 +88,112 @@ def investigator(state: AuditorState, *, gateway) -> AuditorState:
         outcome="pass",
     )
 
-    # ── Risk scoring via dataset hits ──────────────────────────────────────────
-    jf_val = 1.0  
+    # ── Risk scoring ───────────────────────────────────────────────────────────
+    # Two distinct numbers, deliberately kept separate:
+    #   * event_score — the severity of THIS event. Drives the alert priority and
+    #     the risk_event severity. Derived from the ingested event type plus
+    #     severity keywords in the event text, so different injects produce
+    #     genuinely different bands (LOW..CRITICAL) instead of everything
+    #     collapsing onto the entity's pre-seeded high score.
+    #   * entity.risk_score — the entity's cumulative standing risk, which only
+    #     ratchets up (an adverse event never lowers a known-risky entity).
+    jf_val = 1.0
     score_delta_val = 0.0
     new_score = state.get("entity_risk_score", 0.0)
-    risk_band = "UNKNOWN"
+    risk_band = "LOW"
     risk_event_id: str | None = None
+
+    def _band_of(score: float) -> str:
+        if score >= 80:
+            return "CRITICAL"
+        if score >= 60:
+            return "HIGH"
+        if score >= 40:
+            return "MEDIUM"
+        return "LOW"
 
     try:
         policy = get_policy()
         jurisdiction = state.get("entity_jurisdiction") or "default"
         jf_val = policy.jurisdiction_factors.get(jurisdiction, policy.jurisdiction_factors.get("default", 1.0))
 
-        # Retrieve structured data from the News Agent. When the enrichment LLM
-        # degrades (timeout / schema miss) structured_data is None, so guard it.
-        news_context = state.get("news_context") or {}
-        structured = news_context.get("structured_data") or {}
-
-        adverse_media = structured.get("adverse_media_hits", 0)
-        fraud = structured.get("financial_fraud_hits", 0)
-        sanctions = structured.get("sanctions_hits", 0)
-        reg = structured.get("regulatory_mentions", 0)
-
-        log.info(f"investigator: Found {adverse_media} adverse media articles.")
-        log.info(f"investigator: Found {fraud} financial fraud reports.")
-        log.info(f"investigator: Found {sanctions} sanctions hits.")
-
-        # A sanctions screening match is itself a strong signal even when the news
-        # enrichment came back empty.
-        has_sanctions_match = bool(state.get("screening_matches"))
-
-        # Dynamic risk from enriched hits when we have them...
-        dynamic_base_score = 0
-        if sanctions > 0 or has_sanctions_match:
-            dynamic_base_score = 90  # Critical
-            log.info("investigator: Entity with sanctions -> Critical Risk")
-        elif fraud > 0:
-            dynamic_base_score = 75  # High
-            log.info("investigator: Entity with financial fraud -> High Risk")
-        elif adverse_media >= 3 or reg > 1:
-            dynamic_base_score = 50  # Medium
-            log.info("investigator: Entity with repeated adverse media -> Medium Risk")
-        elif adverse_media > 0 or reg > 0:
-            dynamic_base_score = 30  # Low-Medium
-            log.info("investigator: Entity with few findings -> Low Risk")
-
-        # ...otherwise fall back to the event's own type. Every event that reaches
-        # the investigator is an adverse signal, so it must carry a meaningful base
-        # score even when enrichment is unavailable (degraded LLM).
-        event_type_floor = {
+        # Base severity from the injected/ingested event type.
+        _TYPE_BASE = {
             "sanctions_hit": 90,
             "sanctions": 90,
-            "financial_fraud": 75,
-            "transaction_anomaly": 50,
-            "structuring": 50,
-            "adverse_media": 55,
-            "pep_update": 45,
-        }.get((event_type or "").lower(), 40)
-        dynamic_base_score = max(dynamic_base_score, event_type_floor)
-        # Delta is finalized against the entity's actual DB score below.
-        score_delta_val = 0.0
+            "financial_fraud": 78,
+            "transaction_anomaly": 48,
+            "structuring": 55,
+            "adverse_media": 30,   # modulated by text severity below
+            "pep_update": 42,
+        }
+        event_score = _TYPE_BASE.get((event_type or "").lower(), 35)
+
+        # Modulate by severity keywords in the event's own text, so what the
+        # analyst types in the inject form actually changes the outcome.
+        event_text = (event_raw.get("text") or "").lower()
+        _HIGH_KW = ("launder", "fraud", "terror", "sanction", "ofac", "bribery",
+                    "embezzle", "trafficking", "corrupt", "evasion", "smuggl")
+        _MED_KW = ("investigation", "probe", "scrutiny", "lawsuit", "penalty",
+                   "fine", "violation", "misconduct", "regulat", "complian", "allegation")
+        if any(k in event_text for k in _HIGH_KW):
+            event_score = max(event_score, 75)
+        elif any(k in event_text for k in _MED_KW):
+            event_score = max(event_score, 50)
+
+        # A real sanctions/watchlist screening match is always critical.
+        if state.get("screening_matches"):
+            event_score = 90
+
+        event_band = _band_of(event_score)
+        log.info("investigator: event_score=%d band=%s (type=%s)", event_score, event_band, event_type)
 
         with UnitOfWork() as uow:
             from app.models.risk import RiskEvent
             import uuid
             from datetime import datetime, timezone
-            
-            # Update entity score directly in DB
+
             entity = uow.entities.get(entity_id)
             if entity:
                 old_score = entity.risk_score or 0.0
-                # An adverse event never lowers an entity's standing risk: take the
-                # higher of the current score and this event's computed base, so a
-                # degraded enrichment can't tank a known high-risk entity.
-                entity.risk_score = float(max(old_score, dynamic_base_score))
-                score_delta_val = entity.risk_score - old_score
+                # Cumulative entity risk only ratchets up; never tank a known entity.
+                entity.risk_score = float(max(old_score, event_score))
+                entity.risk_band = _band_of(entity.risk_score)
+                score_delta_val = round(entity.risk_score - old_score, 1)  # >= 0
 
-                # Determine risk band
-                if entity.risk_score >= 80:
-                    entity.risk_band = "CRITICAL"
-                elif entity.risk_score >= 60:
-                    entity.risk_band = "HIGH"
-                elif entity.risk_score >= 40:
-                    entity.risk_band = "MEDIUM"
-                else:
-                    entity.risk_band = "LOW"
-                    
-                # Create RiskEvent
                 risk_event = RiskEvent(
                     id=str(uuid.uuid4()),
                     entity_id=entity_id,
                     event_id=state.get("event_id"),
                     event_category=event_type.upper(),
                     delta=score_delta_val,
-                    severity=risk_band,
+                    severity=event_band,          # this event's own severity
                     score_after=entity.risk_score,
                     reasoning=evidence_summary,
-                    created_at=datetime.now(timezone.utc)
+                    created_at=datetime.now(timezone.utc),
                 )
                 uow.session.add(risk_event)
-                
-                new_score = entity.risk_score
-                risk_band = entity.risk_band
+
+                new_score = entity.risk_score     # cumulative (entity display)
+                risk_band = event_band            # this event's band (alert priority)
                 risk_event_id = risk_event.id
-                
-                log.info(f"investigator: Risk updated from {old_score} -> {new_score}.")
+
+                log.info("investigator: entity risk %.0f -> %.0f (event %s)", old_score, new_score, event_band)
                 uow.commit()
 
         tb.add(
             kind="score",
-            label=f"Risk score: {new_score:.1f} ({risk_band})",
+            label=f"Event risk: {event_score} ({event_band}) · Entity now {new_score:.0f}",
             detail=(
-                f"Dynamic Score based on hits: AdverseMedia={adverse_media}, Fraud={fraud}, Sanctions={sanctions}"
+                f"Event severity {event_score}/100 ({event_band}) drives this alert; "
+                f"entity cumulative risk is {new_score:.0f} ({_band_of(new_score)})."
             ),
             values={
                 "event_type": event_type,
-                "severity": severity,
+                "event_score": event_score,
+                "event_band": event_band,
+                "entity_score": new_score,
                 "delta": score_delta_val,
-                "score_after": new_score,
-                "risk_band": risk_band,
             },
             outcome="pass",
         )

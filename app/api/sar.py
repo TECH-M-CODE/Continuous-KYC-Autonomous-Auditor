@@ -144,6 +144,14 @@ async def decide_sar(sar_id: str, body: SARDecisionRequest, request: Request):
             return _not_found(request, sar_id)
         sar.status = _DECISION_TO_STATUS[body.decision]
 
+        # Close out the alert that triggered this SAR so it leaves the active
+        # queue once a human has adjudicated it: approve -> RESOLVED, reject ->
+        # DISMISSED.
+        if sar.alert_id:
+            alert = uow.alerts.get(sar.alert_id)
+            if alert and alert.status.upper() in ("OPEN", "ESCALATED", "IN_PROGRESS"):
+                alert.status = "RESOLVED" if body.decision == "APPROVE" else "DISMISSED"
+
         append_audit(
             action=f"SAR_{body.decision.upper()}",
             payload={

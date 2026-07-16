@@ -19,12 +19,19 @@ export const DetectionHealth = () => {
     );
   }
 
-  if (!report) {
-    return null;
+  if (!report || !report.total) {
+    return (
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col items-center justify-center min-h-[200px] text-center">
+        <ShieldAlert className="w-7 h-7 text-slate-600 mb-2" />
+        <p className="text-sm text-slate-400">Detection drill not yet available.</p>
+        <p className="text-xs text-slate-600 mt-1">Screening universe is still loading.</p>
+      </div>
+    );
   }
 
   const successRate = Math.round((report.caught / report.total) * 100);
   const isHealthy = successRate >= 80;
+  const missesByClass = report.misses_by_class || {};
 
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col h-full">
@@ -50,7 +57,7 @@ export const DetectionHealth = () => {
 
       <div className="space-y-3 flex-1 overflow-y-auto">
         <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Breakdown by Class</h4>
-        {Object.entries(report.misses_by_class).map(([className, misses]) => {
+        {Object.entries(missesByClass).map(([className, misses]) => {
           const hasMisses = misses > 0;
           return (
             <div key={className} className="flex items-center justify-between p-2 rounded-lg bg-slate-800/50 border border-slate-700/50">

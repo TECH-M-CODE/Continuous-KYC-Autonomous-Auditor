@@ -62,13 +62,18 @@ export const AlertQueue = () => {
   }, [lastEvent, queryClient]);
 
   const FILTERS = ['all', 'critical', 'high', 'medium', 'low'];
-  const filteredAlerts = alerts.filter(a =>
+  // Only alerts that still need attention stay in the queue. Dismissing an alert
+  // (or approving/rejecting its SAR) resolves it, which removes it from here.
+  const activeAlerts = alerts.filter(
+    a => !['DISMISSED', 'RESOLVED'].includes((a.status || '').toUpperCase())
+  );
+  const filteredAlerts = activeAlerts.filter(a =>
     filter === 'all' || a.priority?.toLowerCase() === filter
   );
 
   // Count per band for filter tabs
   const countByBand = FILTERS.reduce((acc, f) => {
-    acc[f] = f === 'all' ? alerts.length : alerts.filter(a => a.priority?.toLowerCase() === f).length;
+    acc[f] = f === 'all' ? activeAlerts.length : activeAlerts.filter(a => a.priority?.toLowerCase() === f).length;
     return acc;
   }, {});
 
@@ -246,14 +251,19 @@ export const AlertQueue = () => {
                                 <GitMerge className="w-3 h-3" /> Why?
                               </Link>
                               <button onClick={() => handleAction(alert.id, 'DISMISS')}
+                                title="Dismiss — clear this alert and remove it from the queue"
                                 className="p-1.5 text-slate-500 hover:text-emerald-400 hover:bg-emerald-400/10 rounded-lg transition-colors">
                                 <Check className="w-4 h-4" />
                               </button>
                               <button onClick={() => handleAction(alert.id, 'ESCALATE')}
+                                title="Escalate — flag for senior (MLRO) review"
                                 className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors">
                                 <Shield className="w-4 h-4" />
                               </button>
-                              <button className="p-1.5 text-slate-600 hover:text-slate-300 transition-colors">
+                              <button
+                                title={isExpanded ? 'Hide details' : 'Show details'}
+                                onClick={() => setExpanded(isExpanded ? null : alert.id)}
+                                className="p-1.5 text-slate-600 hover:text-slate-300 transition-colors">
                                 {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                               </button>
                             </div>

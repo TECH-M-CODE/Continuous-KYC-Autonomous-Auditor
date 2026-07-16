@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -19,11 +18,35 @@ from app.schemas.alerts import (
     InvestigationDTO,
 )
 from app.schemas.traces import DecisionTrace
-from app.models.audit import AuditLog
+from app.services.audit_service import append_audit
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 _ACTION_TO_STATUS = {"DISMISS": "DISMISSED", "ESCALATE": "ESCALATED", "RESOLVE": "RESOLVED"}
+
+_EVENT_TYPE_LABELS = {
+    "adverse_media": "Adverse Media",
+    "sanctions_hit": "Sanctions Screening",
+    "sanctions": "Sanctions Screening",
+    "transaction_anomaly": "Transaction Monitoring",
+    "structuring": "Transaction Monitoring",
+    "financial_fraud": "Fraud Detection",
+    "pep_update": "PEP Screening",
+}
+
+
+def _source_and_summary(alert, entity_name: str) -> tuple[str, str]:
+    """Derive a human 'source' label + one-line summary from the alert's trace."""
+    trace = _parse_trace(alert.trace)
+    event_type = None
+    if trace:
+        for node in trace.nodes:
+            if node.kind == "classify":
+                event_type = node.values.get("event_type")
+                break
+    source = _EVENT_TYPE_LABELS.get((event_type or "").lower(), "Continuous Monitoring")
+    summary = f"{alert.priority.upper()} alert for {entity_name} flagged via {source.lower()}."
+    return source, summary
 
 
 def _not_found(request: Request, alert_id: str) -> JSONResponse:
@@ -50,7 +73,8 @@ def _parse_trace(trace_json: str | None) -> Optional[DecisionTrace]:
         return None
 
 
-def _alert_to_summary(alert, entity_name: str) -> AlertSummaryDTO:
+def _alert_to_summary(alert, entity_name: str, risk_score=None) -> AlertSummaryDTO:
+    source, summary = _source_and_summary(alert, entity_name)
     return AlertSummaryDTO(
         id=alert.id,
         entity_id=alert.entity_id,
@@ -58,6 +82,9 @@ def _alert_to_summary(alert, entity_name: str) -> AlertSummaryDTO:
         priority=alert.priority.upper(),
         status=alert.status.upper(),
         created_at=alert.created_at,
+        risk_score=risk_score,
+        source=source,
+        summary=summary,
     )
 
 
@@ -120,7 +147,8 @@ async def list_alerts(
         for a in alerts:
             entity = uow.entities.get(a.entity_id)
             name = entity.name if entity else a.entity_id
-            summaries.append(_alert_to_summary(a, name))
+            rscore = entity.risk_score if entity else None
+            summaries.append(_alert_to_summary(a, name, risk_score=rscore))
 
     total = len(summaries)
     start = (pagination.page - 1) * pagination.limit
@@ -146,17 +174,19 @@ async def act_on_alert(alert_id: str, body: AlertActionRequest, request: Request
         if alert is None:
             return _not_found(request, alert_id)
         alert.status = _ACTION_TO_STATUS[body.action]
-        
-        # Add human action audit log
-        audit = AuditLog(
-            entity_id=alert.entity_id,
+
+        append_audit(
             action=f"ALERT_{body.action.upper()}",
-            actor="human",
-            detail=f"Alert manually {body.action.lower()}d via UI.",
-            seq=uow.audit_logs._session.query(AuditLog).filter_by(entity_id=alert.entity_id).count() + 1
+            payload={
+                "alert_id": alert.id,
+                "action": body.action,
+                "reasoning": body.reasoning,
+            },
+            uow=uow,
+            entity_id=alert.entity_id,
+            actor_id="human",
         )
-        uow.audit_logs.add(audit)
-        
+
         uow.commit()
         entity = uow.entities.get(alert.entity_id)
         name = entity.name if entity else alert.entity_id
