@@ -63,9 +63,33 @@ async def extract_profiles_from_text(text: str) -> list[KYCProfile]:
         return []
 
 import random
+import yaml
 from datetime import datetime, timedelta
 
+def load_policy_bands():
+    try:
+        with open("policy.yaml", "r") as f:
+            policy = yaml.safe_load(f)
+        return policy.get("bands", {"medium": 40, "high": 60, "critical": 80})
+    except Exception:
+        return {"medium": 40, "high": 60, "critical": 80}
+
+def get_risk_level(score, bands):
+    if score < bands.get("medium", 40):
+        return "LOW"
+    elif score < bands.get("high", 60):
+        return "MEDIUM"
+    elif score < bands.get("critical", 80):
+        return "HIGH"
+    else:
+        return "CRITICAL"
+
 def generate_synthetic_profiles(count: int) -> list[KYCProfile]:
+    bands = load_policy_bands()
+    medium_threshold = bands.get("medium", 40)
+    high_threshold = bands.get("high", 60)
+    critical_threshold = bands.get("critical", 80)
+    
     profiles = []
     first_names = ["John", "Jane", "Alice", "Bob", "Charlie", "Diana", "Edward", "Fiona", "George", "Hannah", "Michael", "Sarah", "David", "Emma", "James", "Olivia"]
     last_names = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez", "Chen", "Lee", "Wong", "Kim"]
@@ -87,30 +111,41 @@ def generate_synthetic_profiles(count: int) -> list[KYCProfile]:
             
         country = random.choice(countries)
         
-        # Risk Distribution: 40% Low, 40% Medium, 20% High
-        risk_level = random.choices(["Low", "Medium", "High"], weights=[0.4, 0.4, 0.2])[0]
+        # Risk score generation: skewed towards lower risks
+        risk_score = random.choices(
+            [random.randint(10, medium_threshold - 1), 
+             random.randint(medium_threshold, high_threshold - 1), 
+             random.randint(high_threshold, critical_threshold - 1),
+             random.randint(critical_threshold, 99)], 
+            weights=[0.4, 0.4, 0.15, 0.05]
+        )[0]
         
-        if risk_level == "Low":
-            risk_score = random.randint(10, 40)
+        risk_level = get_risk_level(risk_score, bands)
+        
+        if risk_level == "LOW":
             adverse = 0
             fraud = 0
             sanc = 0
             mentions = random.randint(0, 1)
             indicators = ""
-        elif risk_level == "Medium":
-            risk_score = random.randint(41, 70)
+        elif risk_level == "MEDIUM":
             adverse = random.randint(0, 2)
             fraud = random.randint(0, 1)
             sanc = 0
             mentions = random.randint(1, 3)
             indicators = random.choice(["", "Suspicious transaction", "Unusual behavior"])
-        else:
-            risk_score = random.randint(71, 99)
-            adverse = random.randint(1, 5)
-            fraud = random.randint(0, 3)
+        elif risk_level == "HIGH":
+            adverse = random.randint(1, 4)
+            fraud = random.randint(0, 2)
+            sanc = random.randint(0, 1)
+            mentions = random.randint(2, 4)
+            indicators = random.choice(["Fraud", "Money Laundering", "Multiple alerts"])
+        else: # CRITICAL
+            adverse = random.randint(2, 5)
+            fraud = random.randint(1, 3)
             sanc = random.randint(0, 2)
-            mentions = random.randint(2, 5)
-            indicators = random.choice(["Fraud", "Money Laundering", "Sanctions Hit", "Multiple alerts"])
+            mentions = random.randint(3, 5)
+            indicators = random.choice(["Sanctions Hit", "Severe Fraud", "Terrorist Financing Hit"])
 
         days_ago = random.randint(10, 500)
         incident_date = (datetime.now() - timedelta(days=days_ago)).strftime("%Y-%m-%d") if adverse > 0 else ""
@@ -122,7 +157,7 @@ def generate_synthetic_profiles(count: int) -> list[KYCProfile]:
             country=country,
             industry=industry,
             risk_score=risk_score,
-            risk_level=risk_level.upper(),
+            risk_level=risk_level,
             adverse_media_count=adverse,
             financial_fraud_count=fraud,
             sanctions_count=sanc,
@@ -183,14 +218,16 @@ async def main():
     synthetic_profiles = generate_synthetic_profiles(count=50)
     all_profiles.extend(synthetic_profiles)
         
-    # Deduplicate by entity_name
+    # Deduplicate by entity_name and normalize risk_levels based on policy.yaml
     seen = set()
     unique_profiles = []
+    bands = load_policy_bands()
     for p in all_profiles:
         name = p.entity_name.strip().upper()
         if name not in seen and len(name) > 2:
             seen.add(name)
             p.customer_id = f"CUST-DS-{len(unique_profiles):04d}"
+            p.risk_level = get_risk_level(p.risk_score, bands)
             unique_profiles.append(p)
             
     log.info(f"Generated {len(unique_profiles)} unique profiles total.")
