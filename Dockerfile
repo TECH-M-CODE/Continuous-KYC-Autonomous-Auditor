@@ -29,7 +29,8 @@ RUN useradd -u 10001 -m appuser \
     && mkdir -p /workspace/data \
     && chown -R appuser:appuser /workspace
 
-USER appuser
+# Disabled non-privileged user to avoid SQLite write permission errors with host volumes
+# USER appuser
 
 # Expose port
 EXPOSE 8000
