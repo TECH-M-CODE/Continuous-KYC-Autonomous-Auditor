@@ -1,24 +1,34 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useSSE } from '../hooks/useSSE';
-import { Activity, Zap, ShieldAlert, ArrowRightLeft, AlertTriangle } from 'lucide-react';
+import {
+  Activity, Zap, ShieldAlert, FileText, TrendingUp, Search,
+  Newspaper, Building2, Scale, Gauge, Radio
+} from 'lucide-react';
 import clsx from 'clsx';
 
-const MAX_EVENTS = 40;
-
 const EVENT_META = {
-  'alert.new':        { icon: ShieldAlert, color: 'text-red-400',    bg: 'bg-red-500/10',    label: 'Alert' },
-  'pipeline.start':   { icon: Zap,         color: 'text-brand-400',  bg: 'bg-brand-500/10',  label: 'Pipeline' },
-  'pipeline.done':    { icon: Activity,     color: 'text-emerald-400',bg: 'bg-emerald-500/10',label: 'Done' },
-  'transaction':      { icon: ArrowRightLeft,color:'text-yellow-400', bg: 'bg-yellow-500/10', label: 'Transaction' },
-  default:            { icon: Activity,     color: 'text-slate-400',  bg: 'bg-slate-700/50',  label: 'Event' },
+  'alert.new':         { icon: ShieldAlert, color: 'text-red-400',     bg: 'bg-red-500/10' },
+  'alert.updated':     { icon: ShieldAlert, color: 'text-amber-400',   bg: 'bg-amber-500/10' },
+  'sar.ready':         { icon: FileText,    color: 'text-orange-400',  bg: 'bg-orange-500/10' },
+  'entity.updated':    { icon: TrendingUp,  color: 'text-brand-400',   bg: 'bg-brand-500/10' },
+  'pipeline.progress': { icon: Zap,         color: 'text-brand-400',   bg: 'bg-brand-500/10' },
+  'system.health':     { icon: Activity,    color: 'text-yellow-400',  bg: 'bg-yellow-500/10' },
+  default:             { icon: Activity,    color: 'text-slate-400',   bg: 'bg-slate-700/50' },
 };
 
-function getEventMeta(type = '') {
-  return EVENT_META[type] || EVENT_META.default;
-}
+// Per-agent icons so the feed reads like a pipeline, not a log dump.
+const STAGE_ICON = {
+  monitor: Radio, news: Newspaper, entity: Building2,
+  sanctions: Search, resolver: Scale, investigator: Gauge, reporter: FileText,
+};
 
-function timeStr() {
-  return new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+function getEventMeta(evt) {
+  const base = EVENT_META[evt.type] || EVENT_META.default;
+  if (evt.type === 'pipeline.progress') {
+    const Icon = STAGE_ICON[evt.data?.stage];
+    if (Icon) return { ...base, icon: Icon };
+  }
+  return base;
 }
 
 /**
@@ -29,16 +39,31 @@ export const LiveFeed = ({ className = '', maxHeight = 320, showHeader = true })
   const { connected, events } = useSSE();
   const listRef = useRef(null);
 
+  // Every branch must produce a plain-English sentence — never raw JSON.
   function buildMessage(evt) {
-    const d = evt.data;
-    if (!d) return evt.type;
-    if (evt.type === 'alert.new')
-      return `New ${d.priority || ''} alert — ${d.entity_name || d.entity_id || 'unknown entity'}${d.risk_score ? ` (Score: ${d.risk_score})` : ''}`;
-    if (evt.type === 'entity.updated')
-      return `Entity updated — ${d.entity_name || d.entity_id || 'unknown entity'}${d.new_risk_score ? ` (New Score: ${d.new_risk_score})` : ''}`;
-    if (evt.type === 'pipeline.done')
-      return `Pipeline done: ${d.entity_name || d.outcome || ''}`;
-    return d.message || d.text || JSON.stringify(d).slice(0, 80);
+    const d = evt.data || {};
+    const who = d.entity_name || d.entity_id || 'an entity';
+
+    switch (evt.type) {
+      case 'pipeline.progress':
+        return d.entity_name
+          ? `${d.label || 'Processing'} — ${d.entity_name}`
+          : `${d.label || 'Processing event'}`;
+      case 'alert.new':
+        return `${(d.priority || 'New').toString().toLowerCase()} alert raised for ${who}`;
+      case 'alert.updated':
+        return `Alert for ${who} updated${d.status ? ` to ${d.status.toLowerCase()}` : ''}`;
+      case 'sar.ready':
+        return `SAR draft ready for review — ${who}`;
+      case 'entity.updated':
+        return d.new_risk_score != null
+          ? `${who} risk score is now ${Math.round(d.new_risk_score)}${d.risk_band ? ` (${d.risk_band.toLowerCase()})` : ''}`
+          : `${who} was updated`;
+      case 'system.health':
+        return `${d.adapter || 'A data feed'} is ${d.status || 'degraded'}`;
+      default:
+        return d.message || d.text || d.label || 'Pipeline event';
+    }
   }
 
   return (
@@ -67,7 +92,7 @@ export const LiveFeed = ({ className = '', maxHeight = 320, showHeader = true })
         style={{ maxHeight }}
       >
         {events.map((evt, i) => {
-          const meta = getEventMeta(evt.type);
+          const meta = getEventMeta(evt);
           const Icon = meta.icon;
           return (
             <div
@@ -86,7 +111,7 @@ export const LiveFeed = ({ className = '', maxHeight = 320, showHeader = true })
                 <p className="text-xs text-slate-300 truncate">{buildMessage(evt)}</p>
               </div>
               <span className="text-xs text-slate-600 font-mono shrink-0">
-                {evt.timestamp.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                {new Date(evt.timestamp).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
               </span>
             </div>
           );

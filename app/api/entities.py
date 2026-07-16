@@ -3,10 +3,11 @@ from typing import Optional
 import csv
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query, Request, Body
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from app.api.deps import PaginationParams, pagination_params
 from app.repositories.unit_of_work import UnitOfWork
@@ -225,60 +226,144 @@ async def get_entity_graph(entity_id: str, request: Request):
             return _not_found(request, entity_id)
         return success_response(_build_entity_graph(entity, uow))
 
+def _normalize_name(name: str) -> str:
+    """Case/whitespace-insensitive key used for duplicate detection."""
+    return " ".join((name or "").strip().lower().split())
+
+
+def _norm_type(raw: str) -> str:
+    """Frontend sends PERSON/COMPANY; the dataset stores Person/Organization."""
+    return "Person" if (raw or "").strip().lower() in ("person", "individual") else "Organization"
+
+
+def _match_dto(entity) -> dict:
+    return {
+        "id": entity.id,
+        "name": entity.name,
+        "type": _display_type(entity),
+        "jurisdiction": entity.jurisdiction,
+        "risk_score": entity.risk_score,
+        "risk_band": entity.risk_band,
+    }
+
+
 @router.get("/check-duplicate/name")
 async def check_duplicate(name: str = Query(...)):
+    """Return existing records that plausibly refer to the same customer.
+
+    Exact (normalized) name matches plus close fuzzy matches — a substring test
+    alone flags every "Kim" against every other "Kim", which trains reviewers to
+    click through the warning.
+    """
+    from rapidfuzz import fuzz
+
+    target = _normalize_name(name)
+    if not target:
+        return success_response([])
+
     with UnitOfWork() as uow:
-        # Very simple check
-        entities = uow.entities.list()
-        matches = [e for e in entities if name.lower() in e.name.lower()]
-        summaries = [_entity_to_summary(e) for e in matches]
-    return success_response(summaries)
+        matches = [
+            e for e in uow.entities.list()
+            if _normalize_name(e.name) == target
+            or fuzz.token_sort_ratio(target, _normalize_name(e.name)) >= 88
+        ]
+        payload = [_match_dto(e) for e in matches]
+    return success_response(payload)
 
 
-@router.post("/onboard")
-async def onboard_customer(
-    name: str = Body(...),
-    type: str = Body(...),
-    jurisdiction: str = Body(None),
-    sector: str = Body(None),
-):
-    entity_id = f"ent-{uuid.uuid4().hex[:12]}"
-    now = datetime.utcnow()
-    
-    # 1. Insert into DB
+class OnboardRequest(BaseModel):
+    name: str
+    type: str = "COMPANY"
+    jurisdiction: Optional[str] = None
+    sector: Optional[str] = None
+    # Set once a human has looked at the possible duplicates and confirmed this
+    # really is a different customer.
+    confirm_distinct: bool = False
+
+
+@router.post("/onboard", response_model=APIResponse[dict])
+async def onboard_customer(body: OnboardRequest, request: Request):
+    trace_id = getattr(request.state, "trace_id", None)
+    name = (body.name or "").strip()
+    if not name:
+        return JSONResponse(status_code=400, content={
+            "success": False, "message": "Customer name is required.",
+            "data": None, "trace_id": trace_id, "error_code": "ERR_VALIDATION_FAILED",
+        })
+
+    entity_type = _norm_type(body.type)
+    jurisdiction = (body.jurisdiction or "").strip() or None
+    sector = (body.sector or "").strip() or None
+    norm = _normalize_name(name)
+
     with UnitOfWork() as uow:
-        new_entity = Entity(
+        same_name = [e for e in uow.entities.list() if _normalize_name(e.name) == norm]
+
+        # Same name + same jurisdiction + same type is indistinguishable from the
+        # existing record — refuse outright rather than fork the customer's history.
+        exact = [
+            e for e in same_name
+            if (e.jurisdiction or "").strip().lower() == (jurisdiction or "").strip().lower()
+            and (getattr(e, "entity_type", "") or "").strip().lower() == entity_type.lower()
+        ]
+        if exact:
+            return JSONResponse(status_code=409, content={
+                "success": False,
+                "message": (
+                    f"'{name}' already exists as {exact[0].id}"
+                    + (f" in {jurisdiction}" if jurisdiction else "")
+                    + ". This would create a duplicate customer record."
+                ),
+                "data": {"existing": [_match_dto(e) for e in exact]},
+                "trace_id": trace_id,
+                "error_code": "ERR_DUPLICATE_ENTITY",
+            })
+
+        # Same name but a different jurisdiction/type could legitimately be a
+        # different customer — require an explicit human confirmation.
+        if same_name and not body.confirm_distinct:
+            return JSONResponse(status_code=409, content={
+                "success": False,
+                "message": f"{len(same_name)} existing record(s) share this name. Confirm this is a distinct customer.",
+                "data": {"possible_duplicates": [_match_dto(e) for e in same_name]},
+                "trace_id": trace_id,
+                "error_code": "ERR_POSSIBLE_DUPLICATE",
+            })
+
+        entity_id = f"CUST-ONB-{uuid.uuid4().hex[:8].upper()}"
+        now = datetime.now(timezone.utc)
+        uow.entities.add(Entity(
             id=entity_id,
             name=name,
-            entity_type=type.upper(),
+            entity_type=entity_type,   # NB: the column is `sector`, not `industry`
             jurisdiction=jurisdiction,
-            industry=sector,
-            risk_score=10,
+            sector=sector,
+            risk_score=10.0,
             risk_band="LOW",
+            status="ACTIVE",
+            watched=False,
             created_at=now,
             updated_at=now,
-        )
-        uow.entities.add(new_entity)
+        ))
         uow.commit()
-    
-    # 2. Append to CSV
+
+    # Mirror into the seed dataset so the customer survives a reseed.
     csv_path = os.path.join("data", "kyc_profiles", "dataset_profiles.csv")
-    if os.path.exists(csv_path):
-        with open(csv_path, "a", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            # headers: customer_id,entity_name,entity_type,country,industry,executives,beneficial_owners,registration_country,countries_of_operation,risk_score,risk_level,adverse_media_count,financial_fraud_count,sanctions_count,regulatory_mentions,latest_incident_date,existing_alerts,risk_indicators,last_review_date,monitoring_status,kyc_status
-            writer.writerow([
-                entity_id, name, type.capitalize(), jurisdiction or "", sector or "", 
-                "", "", jurisdiction or "", jurisdiction or "", 
-                "10", "LOW", "0", "0", "0", "0", 
-                "", "0", "", now.isoformat(), "Active", "Verified"
-            ])
-            
-    return success_response({
-        "id": entity_id,
-        "name": name,
-        "type": type,
-        "risk_score": 10,
-        "risk_band": "LOW"
-    })
+    try:
+        if os.path.exists(csv_path):
+            with open(csv_path, "a", newline="", encoding="utf-8") as f:
+                csv.writer(f).writerow([
+                    entity_id, name, entity_type, jurisdiction or "", sector or "",
+                    "", "", jurisdiction or "", jurisdiction or "",
+                    "10", "LOW", "0", "0", "0", "0",
+                    "", "0", "", now.date().isoformat(), "Active", "Approved",
+                ])
+    except OSError:
+        pass  # DB is the source of truth; a CSV mirror failure must not 500 the request
+
+    return success_response(
+        {"id": entity_id, "name": name, "type": _norm_type(body.type),
+         "jurisdiction": jurisdiction, "risk_score": 10.0, "risk_band": "LOW"},
+        message=f"{name} onboarded and added to monitoring.",
+    )
 

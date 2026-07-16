@@ -22,7 +22,7 @@ from pydantic import BaseModel
 
 from app.agents.state import AuditorState
 from app.agents.prompts.reporter_prompts import build_reporter_prompt
-from app.infrastructure.broker import broker, ALERT_NEW, SAR_READY, ENTITY_UPDATED
+from app.infrastructure.broker import broker, ALERT_NEW, ALERT_UPDATED, SAR_READY, ENTITY_UPDATED
 from app.models.events import Alert
 from app.repositories.unit_of_work import UnitOfWork
 from app.services.audit_service import append_audit
@@ -43,6 +43,10 @@ _RISK_BAND_TO_OUTCOME = {
     "HIGH": "alert_high",
     "CRITICAL": "alert_critical",
 }
+
+# An entity's open case absorbs further events instead of spawning duplicates.
+_ACTIVE_ALERT_STATUSES = {"OPEN", "ESCALATED", "IN_PROGRESS"}
+_PRIORITY_RANK = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
 
 
 # ── LLM response schema ──────────────────────────────────────────────────────
@@ -144,18 +148,40 @@ def reporter(state: AuditorState, *, gateway) -> AuditorState:
 
     try:
         with UnitOfWork() as uow:
-            # 1. Create Alert
-            alert = Alert(
-                entity_id=entity_id,
-                trigger_event_id=state.get("risk_event_id"),
-                priority=priority,
-                status="OPEN",
-                band=db_band,
-                trace=trace_json,
-            )
-            uow.alerts.add(alert)
-            uow.session.flush()   # materialize alert.id before SAR links to it
-            alert_id = alert.id
+            # 1. Alert — one open case per entity.
+            # Every event used to mint a brand-new Alert, so a burst of events for
+            # the same entity (multi-typology inject, repeated structuring hits,
+            # the startup backfill) filled the queue with near-identical rows. If
+            # the entity already has an open case, fold this event into it and
+            # escalate the priority when this event is more severe, instead of
+            # duplicating.
+            existing = [
+                a for a in uow.alerts.list()
+                if a.entity_id == entity_id
+                and (a.status or "").upper() in _ACTIVE_ALERT_STATUSES
+            ]
+            is_new_alert = not existing
+
+            if existing:
+                alert = max(existing, key=lambda a: _PRIORITY_RANK.get((a.priority or "").upper(), 0))
+                if _PRIORITY_RANK.get(priority, 0) > _PRIORITY_RANK.get((alert.priority or "").upper(), 0):
+                    alert.priority = priority
+                    alert.band = db_band
+                alert.trace = trace_json          # keep the newest reasoning on the case
+                alert_id = alert.id
+                log.info("reporter: folded event into existing alert %s for %s", alert_id, entity_name)
+            else:
+                alert = Alert(
+                    entity_id=entity_id,
+                    trigger_event_id=state.get("risk_event_id"),
+                    priority=priority,
+                    status="OPEN",
+                    band=db_band,
+                    trace=trace_json,
+                )
+                uow.alerts.add(alert)
+                uow.session.flush()   # materialize alert.id before SAR links to it
+                alert_id = alert.id
 
             # 2. Audit: risk updated
             append_audit(
@@ -170,9 +196,9 @@ def reporter(state: AuditorState, *, gateway) -> AuditorState:
                 entity_id=entity_id,
             )
 
-            # 3. Audit: alert created
+            # 3. Audit: alert created / updated
             append_audit(
-                action="ALERT_CREATED",
+                action="ALERT_CREATED" if is_new_alert else "ALERT_UPDATED",
                 payload={
                     "alert_id": alert_id,
                     "priority": priority,
@@ -183,21 +209,36 @@ def reporter(state: AuditorState, *, gateway) -> AuditorState:
                 entity_id=entity_id,
             )
 
-            # 4. Create SAR draft
-            sar = create_sar_draft(
-                entity_id=entity_id,
-                narrative=narrative,
-                citations=citations,
-                uow=uow,
-                alert_id=alert_id,
+            # 4. SAR draft — one draft per case. If this event folded into an
+            # existing alert that already has an unreviewed draft, refresh that
+            # draft's narrative (new version) rather than stacking duplicates.
+            existing_sar = next(
+                (s for s in uow.sars.list(entity_id=entity_id)
+                 if s.alert_id == alert_id and (s.status or "").upper() in ("DRAFT", "PENDING_APPROVAL")),
+                None,
             )
-            uow.session.flush()
-            sar_id = sar.id
+            if existing_sar is not None:
+                existing_sar.narrative = narrative
+                existing_sar.citations = json.dumps(citations, ensure_ascii=False)
+                existing_sar.version = (existing_sar.version or 1) + 1
+                sar_id = existing_sar.id
+                sar_version = existing_sar.version
+            else:
+                sar = create_sar_draft(
+                    entity_id=entity_id,
+                    narrative=narrative,
+                    citations=citations,
+                    uow=uow,
+                    alert_id=alert_id,
+                )
+                uow.session.flush()
+                sar_id = sar.id
+                sar_version = 1
 
-            # 5. Audit: SAR created
+            # 5. Audit: SAR created / revised
             append_audit(
-                action="SAR_DRAFT_CREATED",
-                payload={"sar_id": sar_id, "alert_id": alert_id, "version": 1},
+                action="SAR_DRAFT_CREATED" if existing_sar is None else "SAR_DRAFT_REVISED",
+                payload={"sar_id": sar_id, "alert_id": alert_id, "version": sar_version},
                 uow=uow,
                 entity_id=entity_id,
             )
@@ -223,7 +264,9 @@ def reporter(state: AuditorState, *, gateway) -> AuditorState:
 
     # ── Broker events ─────────────────────────────────────────────────────────
     try:
-        broker.publish(ALERT_NEW, {
+        # Only a genuinely new case is "alert.new" — folding an event into an
+        # existing case is an update, so the UI doesn't re-toast the same alert.
+        broker.publish(ALERT_NEW if is_new_alert else ALERT_UPDATED, {
             "alert_id": alert_id,
             "entity_id": entity_id,
             "entity_name": entity_name,

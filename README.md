@@ -52,10 +52,36 @@ The system runs in three concurrent loops:
    ```
 
 ## 7. Demo
-The live dashboard is available at `http://localhost:5174/` once both servers are running. 
+
+### Prototype Walkthrough
+
+<!-- ▼▼▼ PASTE THE VIDEO URL ON THE BLANK LINE BELOW ▼▼▼
+     GitHub renders an inline player ONLY for videos it hosts itself. A relative
+     path to an .mp4 (and any <video> tag) will not play here.
+
+     One-time setup:
+       1. Open a new issue on this repo (github.com/TECH-M-CODE/Continuous-KYC-Autonomous-Auditor/issues/new)
+          and drag `Demo_Prototype_web.mp4` into the comment box.
+       2. Wait for the upload to finish — it inserts a
+          https://github.com/user-attachments/assets/... URL. Copy it.
+       3. Close the issue tab WITHOUT submitting (the upload is already hosted).
+       4. Paste that URL on the blank line below, on its own line, with no
+          markdown around it. GitHub turns a bare asset URL into a player.
+     ▼▼▼ -->
+
+
+<!-- ▲▲▲ PASTE ABOVE ▲▲▲ -->
+
+A 3-minute end-to-end walkthrough of the running system: continuous ingestion from
+live feeds, the multi-agent pipeline resolving and scoring an entity in real time,
+an auto-drafted SAR with cited evidence, and the human approval step landing in the
+tamper-evident, hash-chained audit trail.
+
+### Running it yourself
+The live dashboard is available at `http://localhost:5174/` once both servers are running.
 
 ## 8. Team Members
-- Kushi Katiyar
+- Khushi Katiyar
 - Abhinav S
 - Gnaneshwar R L
 - Prafulla Pal

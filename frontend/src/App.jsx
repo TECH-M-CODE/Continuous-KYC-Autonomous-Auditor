@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Dashboard } from './pages/Dashboard';
 import { AlertQueue } from './pages/AlertQueue';
@@ -9,21 +9,20 @@ import { AuditTrail } from './pages/AuditTrail';
 import { AdminWatchlist } from './pages/AdminWatchlist';
 import TraceView from './pages/TraceView';
 
+// The Router lives in main.jsx (above ToastProvider) so toast <Link>s resolve.
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<Dashboard />} />
-          <Route path="alerts" element={<AlertQueue />} />
-          <Route path="timeline/:entityId?" element={<EntityTimeline />} />
-          <Route path="sar/:id?" element={<SARReview />} />
-          <Route path="audit/:entityId?" element={<AuditTrail />} />
-          <Route path="watchlist" element={<AdminWatchlist />} />
-          <Route path="alerts/:id/trace" element={<TraceView />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <Routes>
+      <Route path="/" element={<Layout />}>
+        <Route index element={<Dashboard />} />
+        <Route path="alerts" element={<AlertQueue />} />
+        <Route path="timeline/:entityId?" element={<EntityTimeline />} />
+        <Route path="sar/:id?" element={<SARReview />} />
+        <Route path="audit/:entityId?" element={<AuditTrail />} />
+        <Route path="watchlist" element={<AdminWatchlist />} />
+        <Route path="alerts/:id/trace" element={<TraceView />} />
+      </Route>
+    </Routes>
   );
 }
 

@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   ShieldCheck, ShieldAlert, Users, AlertTriangle,
-  FileText, TrendingUp, Globe, ArrowUpRight, Activity
+  FileText, TrendingUp, ArrowUpRight
 } from 'lucide-react';
 import { apiClient } from '../api/client';
 import { RiskGauge } from '../components/RiskGauge';
@@ -103,20 +103,11 @@ export const Dashboard = () => {
     ...b, count: entities.filter(e => e.risk_band === b.key).length,
   }));
 
+  // Full-width card now, so surface more of the book in two columns.
   const topEntities = useMemo(() =>
-    [...entities].sort((a, b) => (b.risk_score || 0) - (a.risk_score || 0)).slice(0, 5),
+    [...entities].sort((a, b) => (b.risk_score || 0) - (a.risk_score || 0)).slice(0, 10),
     [entities]
   );
-
-  // Country distribution for threat map
-  const countryCounts = useMemo(() => {
-    const map = {};
-    entities.forEach(e => {
-      const c = e.jurisdiction || 'Unknown';
-      map[c] = (map[c] || 0) + 1;
-    });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 8);
-  }, [entities]);
 
   return (
     <div className="flex flex-col space-y-6 max-w-7xl mx-auto w-full relative">
@@ -187,10 +178,9 @@ export const Dashboard = () => {
         </div>
       </div>
 
-      {/* ── Bottom row: Top Entities + Threat Map ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {/* ── Bottom row: Top Riskiest Entities (full width) ── */}
+      <div className="grid grid-cols-1 gap-4">
 
-        {/* Top 5 Riskiest */}
         <div className="glass-card rounded-2xl p-5 animate-slide-up" style={{ animationDelay: '500ms' }}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
@@ -199,7 +189,7 @@ export const Dashboard = () => {
             </h2>
             <Link to="/watchlist" className="text-xs text-brand-400 hover:text-brand-300 transition-colors">View all →</Link>
           </div>
-          <div className="space-y-1">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
             {topEntities.map((e, i) => <EntityRow key={e.id} entity={e} rank={i + 1} />)}
             {topEntities.length === 0 && (
               <p className="text-xs text-slate-600 text-center py-6">No entities yet.</p>
@@ -207,46 +197,6 @@ export const Dashboard = () => {
           </div>
         </div>
 
-        {/* Threat Map (country distribution) */}
-        <div className="glass-card rounded-2xl p-5 animate-slide-up" style={{ animationDelay: '600ms' }}>
-          <h2 className="text-sm font-semibold text-slate-300 flex items-center gap-2 mb-4">
-            <Globe className="w-4 h-4 text-brand-400" />
-            Geographic Exposure
-          </h2>
-          <div className="space-y-3">
-            {countryCounts.map(([country, count]) => {
-              const pct = Math.round((count / (entities.length || 1)) * 100);
-              const isHighRisk = entities
-                .filter(e => e.jurisdiction === country)
-                .some(e => e.risk_band === 'CRITICAL' || e.risk_band === 'HIGH');
-              return (
-                <div key={country}>
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className={isHighRisk ? 'text-orange-400 font-medium' : 'text-slate-400'}>
-                      {country}
-                      {isHighRisk && <span className="ml-1.5 text-[10px] text-red-400 font-semibold">HIGH RISK</span>}
-                    </span>
-                    <span className="text-slate-500">{count} entities · {pct}%</span>
-                  </div>
-                  <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                    <div
-                      className="h-1.5 rounded-full transition-all"
-                      style={{
-                        width: `${pct}%`,
-                        background: isHighRisk
-                          ? 'linear-gradient(90deg, #f97316, #ef4444)'
-                          : 'linear-gradient(90deg, #0a7eff, #7c3aed)',
-                      }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-            {countryCounts.length === 0 && (
-              <p className="text-xs text-slate-600 text-center py-6">No geographic data yet.</p>
-            )}
-          </div>
-        </div>
       </div>
     </div>
   );

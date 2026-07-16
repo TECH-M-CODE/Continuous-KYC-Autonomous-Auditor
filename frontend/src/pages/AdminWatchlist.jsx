@@ -38,12 +38,23 @@ export const AdminWatchlist = () => {
   const [isChecking, setIsChecking] = useState(false);
   const [verificationResult, setVerificationResult] = useState(null);
 
+  const [onboardError, setOnboardError] = useState(null);
+
   const addCustomerMutation = useMutation({
     mutationFn: apiClient.addCustomer,
     onSuccess: () => {
+      setOnboardError(null);
       queryClient.invalidateQueries({ queryKey: ['watchlist'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-entities'] });
       setIsModalOpen(false);
       setFormData({ name: '', jurisdiction: '', sector: '', type: 'COMPANY' });
+    },
+    onError: (err) => {
+      // Surface the backend's reason (e.g. duplicate customer) instead of failing silently.
+      setOnboardError(
+        err?.response?.data?.message || err?.message || 'Could not onboard this customer.'
+      );
+      setIsModalOpen(true);
     },
   });
 
@@ -413,11 +424,13 @@ export const AdminWatchlist = () => {
               </button>
               <button
                 onClick={() => {
-                  const finalName = formData.type === 'PERSON' 
-                    ? `${formData.firstName || ''} ${formData.lastName || ''}`.trim() 
+                  const finalName = formData.type === 'PERSON'
+                    ? `${formData.firstName || ''} ${formData.lastName || ''}`.trim()
                     : formData.name;
                   setShowDuplicateModal(false);
-                  addCustomerMutation.mutate({ ...formData, name: finalName });
+                  // The human has reviewed the matches and says this is a
+                  // different customer — tell the backend to allow the same name.
+                  addCustomerMutation.mutate({ ...formData, name: finalName, confirm_distinct: true });
                 }}
                 className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-lg transition-colors"
               >
@@ -516,9 +529,16 @@ export const AdminWatchlist = () => {
                 />
               </div>
             </div>
+            {onboardError && (
+              <div className="mt-4 flex items-start gap-2 px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{onboardError}</span>
+              </div>
+            )}
+
             <div className="mt-6 flex justify-end gap-3">
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={() => { setIsModalOpen(false); setOnboardError(null); }}
                 className="px-4 py-2 text-slate-300 hover:text-white transition-colors cursor-pointer"
               >
                 Cancel

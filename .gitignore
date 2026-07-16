@@ -61,3 +61,6 @@ yarn-error.log*
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Demo footage — hosted by GitHub (see README), not committed
+*.mp4

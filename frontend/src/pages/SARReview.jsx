@@ -94,6 +94,10 @@ export const SARReview = () => {
   // SARs (approved / rejected / filed) move to a collapsed "Completed" archive.
   const activeSars = allSars.filter(s => ['DRAFT', 'PENDING_APPROVAL'].includes(s.status));
   const completedSars = allSars.filter(s => !['DRAFT', 'PENDING_APPROVAL'].includes(s.status));
+  // Keep the archive open while you're looking at a SAR that just moved into it,
+  // so an approved draft doesn't appear to simply vanish from the sidebar.
+  const currentIsCompleted = completedSars.some(s => s.id === id);
+  const isCompletedOpen = showCompleted || currentIsCompleted;
 
   // Latest redirect
   const { data: latestSars = [], isLoading: isLatestLoading } = useQuery({
@@ -120,22 +124,43 @@ export const SARReview = () => {
   const addAuditEntry = (action, detail) =>
     setOptimisticAudit(prev => [{ time: new Date().toLocaleTimeString(), actor: 'Human Officer', action, detail }, ...prev]);
 
+  // The sidebar list is keyed ['sars', ...] while the open draft is ['sar', id].
+  // Refreshing only the detail left the list showing a stale DRAFT status, so a
+  // reviewed SAR never moved into Completed — always refresh both.
+  const refreshSar = () => {
+    queryClient.invalidateQueries({ queryKey: ['sar', id] });
+    queryClient.invalidateQueries({ queryKey: ['sars'] });   // prefix: 'all' + 'latest'
+  };
+
   const editMutation = useMutation({
     mutationFn: (narrative) => apiClient.editSAR({ id, narrative }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['sar', id] }); setIsEditing(false); addAuditEntry('SAR_EDITED', 'Narrative updated'); },
+    onSuccess: () => { refreshSar(); setIsEditing(false); addAuditEntry('SAR_EDITED', 'Narrative updated'); },
   });
   const approveMutation = useMutation({
     mutationFn: (comments) => apiClient.approveSAR({ id, comments }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['sar', id] }); addAuditEntry('SAR_APPROVED', 'Filed to regulatory'); setActionNotes(''); },
+    onSuccess: () => {
+      refreshSar();
+      // Approving resolves the underlying alert, so the queue changes too.
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-alerts'] });
+      addAuditEntry('SAR_APPROVED', 'Filed to regulatory');
+      setActionNotes('');
+    },
   });
   const rejectMutation = useMutation({
     mutationFn: (comments) => apiClient.rejectSAR({ id, comments }),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['sar', id] }); addAuditEntry('SAR_REJECTED', 'Rejected by officer'); setActionNotes(''); },
+    onSuccess: () => {
+      refreshSar();
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-alerts'] });
+      addAuditEntry('SAR_REJECTED', 'Rejected by officer');
+      setActionNotes('');
+    },
   });
   const requestInfoMutation = useMutation({
     mutationFn: (q) => apiClient.requestSARInfo({ id, question: q }),
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['sar', id] });
+      refreshSar();
       addAuditEntry('INFO_REQUESTED', 'Investigator answered a follow-up question');
       setQaHistory(prev => [
         { q: variables, a: data?.answer || 'No answer returned.', degraded: !!data?.degraded, time: new Date().toLocaleTimeString() },
@@ -187,16 +212,16 @@ export const SARReview = () => {
           {completedSars.length > 0 && (
             <div className="pt-3 mt-2 border-t border-slate-800">
               <button
-                onClick={() => setShowCompleted(v => !v)}
+                onClick={() => setShowCompleted(v => !isCompletedOpen ? true : !v)}
                 className="w-full flex items-center justify-between px-1 py-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wider hover:text-slate-300 transition-colors"
               >
                 <span className="flex items-center gap-1.5">
                   <Archive className="w-3.5 h-3.5" />
                   Completed ({completedSars.length})
                 </span>
-                {showCompleted ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                {isCompletedOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
               </button>
-              {showCompleted && (
+              {isCompletedOpen && (
                 <div className="space-y-1 mt-1">
                   {completedSars.map(s => <SarLink key={s.id} s={s} currentId={id} />)}
                 </div>
