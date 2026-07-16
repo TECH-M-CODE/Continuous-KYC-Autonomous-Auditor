@@ -54,7 +54,7 @@ export const RiskGauge = ({ score = 0, size = 140, label = 'Risk Score', animate
         <circle
           cx="60" cy="65" r={R}
           fill="none"
-          stroke="#1e2d45"
+          stroke="var(--app-border)"
           strokeWidth="10"
           strokeDasharray={`${arc} ${gap}`}
           strokeDashoffset={0}

@@ -17,7 +17,7 @@ export const RiskSparkline = ({
   if (points.length < 2) {
     return (
       <svg width={width} height={height} role="img" aria-label="No data">
-        <line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke="#1e2d45" strokeWidth="1" strokeDasharray="4 2" />
+        <line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke="var(--app-border)" strokeWidth="1" strokeDasharray="4 2" />
       </svg>
     );
   }

@@ -98,6 +98,28 @@ def _route_after_resolver(state: AuditorState) -> str:
 
 # ── Graph construction ────────────────────────────────────────────────────────
 
+def _emit_progress(state: AuditorState, stage: str, label: str) -> None:
+    """Publish a per-agent progress frame so the UI can show a live pipeline stepper."""
+    try:
+        from app.infrastructure.broker import broker, PIPELINE_PROGRESS
+        broker.publish(PIPELINE_PROGRESS, {
+            "event_id": state.get("event_id"),
+            "entity_name": state.get("entity_name"),
+            "stage": stage,
+            "label": label,
+        })
+    except Exception:  # progress is best-effort; never break the pipeline
+        pass
+
+
+def _with_progress(stage: str, label: str, fn):
+    """Wrap a node so it announces itself on the broker before running."""
+    def wrapped(state: AuditorState) -> AuditorState:
+        _emit_progress(state, stage, label)
+        return fn(state)
+    return wrapped
+
+
 def _build_graph(gw: LLMGateway) -> Any:
     """Build and compile the 7-node LangGraph StateGraph with injected gateway."""
     # Partially apply gateway so nodes remain callable(state) → state
@@ -107,14 +129,14 @@ def _build_graph(gw: LLMGateway) -> Any:
 
     graph = StateGraph(AuditorState)
 
-    # ── Register all 7 nodes ─────────────────────────────────────────────────
-    graph.add_node("monitor",          monitor)         # parse + trace init
-    graph.add_node("news_agent",       news_agent)      # source credibility enrichment
-    graph.add_node("entity_agent",     entity_agent)    # fuzzy entity resolution
-    graph.add_node("sanctions_agent",  sanctions_agent) # watchlist fuzzy screening
-    graph.add_node("resolver",         _resolver)       # LLM verdict + confidence blend
-    graph.add_node("investigator",     _investigator)   # classify + risk scoring
-    graph.add_node("reporter",         _reporter)       # SAR + alert + audit
+    # ── Register all 7 nodes (each wrapped to emit a live progress frame) ─────
+    graph.add_node("monitor",          _with_progress("monitor", "Ingesting event", monitor))
+    graph.add_node("news_agent",       _with_progress("news", "Enriching from news & datasets", news_agent))
+    graph.add_node("entity_agent",     _with_progress("entity", "Resolving entity", entity_agent))
+    graph.add_node("sanctions_agent",  _with_progress("sanctions", "Screening watchlists", sanctions_agent))
+    graph.add_node("resolver",         _with_progress("resolver", "Adjudicating match", _resolver))
+    graph.add_node("investigator",     _with_progress("investigator", "Scoring risk", _investigator))
+    graph.add_node("reporter",         _with_progress("reporter", "Drafting SAR & alert", _reporter))
 
     # ── Entry point ──────────────────────────────────────────────────────────
     graph.set_entry_point("monitor")

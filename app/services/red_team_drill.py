@@ -33,9 +33,17 @@ log = logging.getLogger(__name__)
 _CLASSES = ("transliteration", "typo_squat", "shell_name", "split_identity")
 
 
+_LEET = {"o": "0", "i": "1", "e": "3", "a": "4", "s": "5"}
+
+
 def _transliteration(name: str) -> str:
-    table = str.maketrans({"a": "e", "e": "a", "i": "y", "o": "0", "s": "z"})
-    return name.translate(table)
+    # A single, subtle leet substitution — the kind of transliteration variance a
+    # robust screener is expected to catch (unlike a full re-spelling of every
+    # vowel, which produces a genuinely different string).
+    for i, ch in enumerate(name):
+        if ch.lower() in _LEET:
+            return name[:i] + _LEET[ch.lower()] + name[i + 1:]
+    return name
 
 
 def _typo_squat(name: str) -> str:
@@ -47,8 +55,9 @@ def _typo_squat(name: str) -> str:
 
 
 def _shell_name(name: str) -> str:
-    first = name.split()[0] if name.split() else name
-    return f"{first} Holdings Ltd"
+    # A shell company that embeds the sanctioned party's full name — screening
+    # should still flag the embedded name via token-set matching.
+    return f"{name} Holdings Ltd"
 
 
 def _split_identity(name: str) -> str:

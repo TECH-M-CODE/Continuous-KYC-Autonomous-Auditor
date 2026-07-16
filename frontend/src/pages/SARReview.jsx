@@ -82,6 +82,7 @@ export const SARReview = () => {
   const [selectedCitation, setSelectedCitation] = useState(null);
   const [optimisticAudit, setOptimisticAudit]   = useState([]);
   const [showCompleted, setShowCompleted]       = useState(false);
+  const [qaHistory, setQaHistory]               = useState([]);
 
   // SAR list for sidebar
   const { data: allSars = [] } = useQuery({
@@ -133,7 +134,15 @@ export const SARReview = () => {
   });
   const requestInfoMutation = useMutation({
     mutationFn: (q) => apiClient.requestSARInfo({ id, question: q }),
-    onSuccess: () => { queryClient.invalidateQueries(['sar', id]); addAuditEntry('INFO_REQUESTED', 'Investigator dispatched'); setQuestion(''); },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries(['sar', id]);
+      addAuditEntry('INFO_REQUESTED', 'Investigator answered a follow-up question');
+      setQaHistory(prev => [
+        { q: variables, a: data?.answer || 'No answer returned.', degraded: !!data?.degraded, time: new Date().toLocaleTimeString() },
+        ...prev,
+      ]);
+      setQuestion('');
+    },
   });
 
   if (!id && !isLatestLoading && latestSars.length === 0) {
@@ -332,6 +341,32 @@ export const SARReview = () => {
                         <span className="text-slate-500"> · {entry.action}</span>
                         <p className="text-slate-400 text-[10px] mt-0.5">{entry.detail}</p>
                       </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(qaHistory.length > 0 || requestInfoMutation.isPending) && (
+              <div className="glass-card rounded-2xl p-4">
+                <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-brand-400" />
+                  Investigator Q&amp;A
+                </h3>
+                <div className="space-y-3">
+                  {requestInfoMutation.isPending && (
+                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Investigator is reviewing the evidence…
+                    </div>
+                  )}
+                  {qaHistory.map((qa, idx) => (
+                    <div key={idx} className="rounded-xl bg-slate-950 border border-slate-800 p-3">
+                      <p className="text-xs font-semibold text-brand-300 mb-1">Q: {qa.q}</p>
+                      <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{qa.a}</p>
+                      {qa.degraded && (
+                        <p className="text-[10px] text-amber-400 mt-1.5">⚠ LLM degraded — fallback answer.</p>
+                      )}
                     </div>
                   ))}
                 </div>

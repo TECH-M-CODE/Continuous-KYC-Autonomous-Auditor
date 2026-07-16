@@ -36,6 +36,9 @@ export const AlertQueue = () => {
     queryKey: ['alerts'],
     queryFn: apiClient.getAlerts,
     refetchInterval: 10_000,
+    // Keep the current rows on screen while a refetch (triggered by an incoming
+    // SSE alert) is in flight — prevents the table from blanking for a beat.
+    placeholderData: (prev) => prev,
   });
 
   const queryClient = useQueryClient();
@@ -169,7 +172,7 @@ export const AlertQueue = () => {
 
       {/* Table */}
       <div className="glass-card rounded-2xl flex-1 overflow-hidden flex flex-col">
-        {isLoading ? (
+        {isLoading && alerts.length === 0 ? (
           <div className="flex-1 flex items-center justify-center">
             <Loader2 className="w-7 h-7 text-brand-400 animate-spin" />
           </div>

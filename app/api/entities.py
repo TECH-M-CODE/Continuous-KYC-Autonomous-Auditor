@@ -21,9 +21,17 @@ from app.schemas.entities import (
 
 router = APIRouter(prefix="/entities", tags=["entities"])
 
-# The domain model doesn't yet distinguish person-type entities (seed_entities.py
-# only ever creates corporate records), so every row is reported as a COMPANY.
-_ENTITY_TYPE = "COMPANY"
+
+def _display_type(entity) -> str:
+    """Normalize the stored entity_type to the label the UI expects.
+
+    The dataset stores "Person" / "Organization"; the frontend switches its icon
+    on the literal "Person", and shows the label verbatim otherwise.
+    """
+    raw = (getattr(entity, "entity_type", None) or "Organization").strip().lower()
+    if raw in ("person", "individual"):
+        return "Person"
+    return "Company"
 
 # Map a RiskEvent's category onto the frontend DecisionGraph node types.
 _CATEGORY_NODE_TYPE = {
@@ -125,7 +133,7 @@ def _entity_to_summary(entity) -> EntitySummaryDTO:
     return EntitySummaryDTO(
         id=entity.id,
         name=entity.name,
-        type=_ENTITY_TYPE,
+        type=_display_type(entity),
         risk_score=entity.risk_score,
         risk_band=entity.risk_band,
     )
@@ -165,7 +173,7 @@ def _entity_to_detail(entity, uow: UnitOfWork) -> EntityDetailDTO:
     return EntityDetailDTO(
         id=entity.id,
         name=entity.name,
-        type=_ENTITY_TYPE,
+        type=_display_type(entity),
         risk_score=entity.risk_score,
         risk_band=entity.risk_band,
         jurisdiction=entity.jurisdiction or "",

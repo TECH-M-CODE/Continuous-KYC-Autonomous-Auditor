@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { ShieldAlert, Zap, Search, ToggleLeft, ToggleRight, Loader2, X, TrendingUp } from 'lucide-react';
 import { StatusBadge } from '../components/StatusBadge';
 import { DetectionHealth } from '../components/DetectionHealth';
+import { PipelineProgress } from '../components/PipelineProgress';
 import { apiClient } from '../api/client';
 import clsx from 'clsx';
 
@@ -14,41 +15,68 @@ const BAND_BAR = {
   LOW:      '#22c55e',
 };
 
+const EVENT_TYPES = [
+  { value: 'adverse_media',      label: 'Adverse Media' },
+  { value: 'transaction_anomaly', label: 'Transaction Anomaly' },
+  { value: 'sanctions_hit',      label: 'Sanctions List Hit' },
+];
+
 export const AdminWatchlist = () => {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [injectModalOpen, setInjectModalOpen] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState(null);
-  const [injectForm, setInjectForm] = useState({ event_type: 'adverse_media', title: '', text: '' });
+  const [injectForm, setInjectForm] = useState({ eventTypes: ['adverse_media'], title: '', text: '' });
+  const [isInjecting, setIsInjecting] = useState(false);
+  const [progress, setProgress] = useState({ open: false, count: 1, name: '' });
 
   const { data: entities = [], isLoading } = useQuery({
     queryKey: ['watchlist'],
     queryFn: apiClient.getWatchlist,
   });
 
-  const injectMutation = useMutation({
-    mutationFn: apiClient.injectEvent,
-    onSuccess: () => {
-      setInjectModalOpen(false);
-      setInjectForm({ event_type: 'adverse_media', title: '', text: '' });
-      queryClient.invalidateQueries({ queryKey: ['alerts'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard-alerts'] });
-    },
-  });
-
   const openInjectModal = (entity) => {
     setSelectedEntity(entity);
     setInjectForm({
-      event_type: 'adverse_media',
+      eventTypes: ['adverse_media'],
       title: `Risk signal detected for ${entity.name}`,
       text: `Automated system flagged ${entity.name} for compliance review.`,
     });
     setInjectModalOpen(true);
   };
 
-  const handleInjectSubmit = (e) => {
+  const toggleType = (value) => {
+    setInjectForm(f => ({
+      ...f,
+      eventTypes: f.eventTypes.includes(value)
+        ? f.eventTypes.filter(t => t !== value)
+        : [...f.eventTypes, value],
+    }));
+  };
+
+  const handleInjectSubmit = async (e) => {
     e.preventDefault();
-    injectMutation.mutate({ ...injectForm, entity_hint: selectedEntity.name });
+    const types = injectForm.eventTypes;
+    if (types.length === 0 || !selectedEntity) return;
+    setIsInjecting(true);
+    try {
+      // One event per selected type — lets the analyst simulate several
+      // concurrent typologies for the same entity in a single action.
+      for (const t of types) {
+        await apiClient.injectEvent({
+          event_type: t,
+          title: injectForm.title,
+          text: injectForm.text,
+          entity_hint: selectedEntity.name,
+        });
+      }
+    } finally {
+      setIsInjecting(false);
+      setInjectModalOpen(false);
+      setProgress({ open: true, count: types.length, name: selectedEntity.name });
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-alerts'] });
+    }
   };
 
   // Client-side search filter
@@ -205,16 +233,36 @@ export const AdminWatchlist = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">Event Type</label>
-                <select
-                  value={injectForm.event_type}
-                  onChange={e => setInjectForm({ ...injectForm, event_type: e.target.value })}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-slate-200 focus:border-brand-500 outline-none"
-                >
-                  <option value="adverse_media">Adverse Media</option>
-                  <option value="transaction_anomaly">Transaction Anomaly</option>
-                  <option value="sanctions_hit">Sanctions List Hit</option>
-                </select>
+                <label className="block text-xs font-semibold text-slate-400 mb-1.5 uppercase tracking-wider">
+                  Event Type(s) — select one or more
+                </label>
+                <div className="space-y-1.5">
+                  {EVENT_TYPES.map(t => {
+                    const checked = injectForm.eventTypes.includes(t.value);
+                    return (
+                      <label
+                        key={t.value}
+                        className={clsx(
+                          'flex items-center gap-2.5 px-3 py-2 rounded-xl border cursor-pointer transition-all',
+                          checked
+                            ? 'bg-brand-500/10 border-brand-500/40 text-brand-200'
+                            : 'bg-slate-800/60 border-slate-700 text-slate-400 hover:border-slate-600'
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleType(t.value)}
+                          className="accent-brand-500 w-4 h-4"
+                        />
+                        <span className="text-sm font-medium">{t.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {injectForm.eventTypes.length === 0 && (
+                  <p className="text-[11px] text-amber-400 mt-1.5">Select at least one event type.</p>
+                )}
               </div>
 
               <div>
@@ -245,17 +293,25 @@ export const AdminWatchlist = () => {
                   className="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors">
                   Cancel
                 </button>
-                <button type="submit" disabled={injectMutation.isPending}
+                <button type="submit" disabled={isInjecting || injectForm.eventTypes.length === 0}
                   className="flex items-center gap-2 px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-sm font-semibold transition-colors disabled:opacity-50">
-                  {injectMutation.isPending
+                  {isInjecting
                     ? <><Loader2 className="w-4 h-4 animate-spin" /> Injecting…</>
-                    : <><Zap className="w-4 h-4" /> Inject Event</>}
+                    : <><Zap className="w-4 h-4" /> Inject {injectForm.eventTypes.length > 1 ? `${injectForm.eventTypes.length} Events` : 'Event'}</>}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* ── Live pipeline progress overlay ── */}
+      <PipelineProgress
+        open={progress.open}
+        expectedCount={progress.count}
+        entityName={progress.name}
+        onClose={() => setProgress(p => ({ ...p, open: false }))}
+      />
     </div>
   );
 };

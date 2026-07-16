@@ -32,16 +32,34 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     import app.models.audit      # noqa: F401
     Base.metadata.create_all(bind=engine)
 
-    # Auto-seed dataset-derived KYC profiles if the DB is empty
+    # Auto-seed / migrate dataset-derived KYC profiles.
     try:
+        import logging
+        from sqlalchemy import inspect, text
         from data.seed.seed_entities import seed as seed_entities
         from app.repositories.unit_of_work import UnitOfWork
+
+        _log = logging.getLogger(__name__)
+
+        # Lightweight migration: older DBs predate the entities.entity_type column.
+        # Add it in place (SQLite ALTER ADD COLUMN) so create_all's fresh schema and
+        # legacy tables converge. A migrated legacy DB is then reseeded so every row
+        # gets a real Person/Organization type from the current dataset.
+        insp = inspect(engine)
+        schema_migrated = False
+        if "entities" in insp.get_table_names():
+            cols = [c["name"] for c in insp.get_columns("entities")]
+            if "entity_type" not in cols:
+                with engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE entities ADD COLUMN entity_type VARCHAR(50) DEFAULT 'Organization'"))
+                schema_migrated = True
+                _log.info("Migrated entities table: added entity_type column")
+
         with UnitOfWork() as uow:
             existing = uow.entities.list()
-        if not existing:
-            import logging
-            logging.getLogger(__name__).info("DB empty — seeding dataset KYC profiles...")
-            seed_entities()
+        if not existing or schema_migrated:
+            _log.info("Seeding dataset KYC profiles (empty=%s migrated=%s)...", not existing, schema_migrated)
+            seed_entities()  # clears + reloads entities (cascades to alerts/SARs/risk_events)
     except Exception as _seed_err:
         import logging
         logging.getLogger(__name__).warning("Auto-seed skipped: %s", _seed_err)
@@ -84,13 +102,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from app.agents.supervisor import run_pipeline
     loop_b_task = asyncio.create_task(poll_unprocessed_events(handler=run_pipeline))
 
+    # Autonomous behaviour: turn already-high-risk entities into alerts on their
+    # own, shortly after boot, without waiting for a manual inject.
+    from app.services.backfill import backfill_high_risk_alerts
+    backfill_task = asyncio.create_task(backfill_high_risk_alerts())
+
     yield
 
-    loop_b_task.cancel()
-    try:
-        await loop_b_task
-    except asyncio.CancelledError:
-        pass
+    for task in (loop_b_task, backfill_task):
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
     scheduler.shutdown(wait=False)
 
 

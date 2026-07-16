@@ -171,23 +171,68 @@ from pydantic import BaseModel
 class SARRequestInfoBody(BaseModel):
     question: str
 
+
+class _InvestigatorAnswer(BaseModel):
+    answer: str
+
+
 @router.post("/{sar_id}/request-info", response_model=APIResponse[dict])
 async def request_sar_info(sar_id: str, body: SARRequestInfoBody, request: Request):
+    # Snapshot the SAR context + write the audit row, then release the UoW before
+    # the (slower) LLM call so we don't hold a DB transaction open across the network.
     with UnitOfWork() as uow:
         sar = uow.sars.get(sar_id)
         if sar is None:
             return _not_found(request, sar_id)
-        
+
+        entity = uow.entities.get(sar.entity_id)
+        entity_name = entity.name if entity else sar.entity_id
+        narrative = sar.narrative or ""
+        citations = get_citations(sar)
+
         append_audit(
             action="INFO_REQUESTED",
-            payload={
-                "sar_id": sar.id,
-                "question": body.question,
-            },
+            payload={"sar_id": sar.id, "question": body.question},
             uow=uow,
             entity_id=sar.entity_id,
             actor_id="human",
         )
         uow.commit()
 
-        return success_response({"status": "dispatched"}, message="Investigator dispatched.")
+    # Ask the same LLM that authored the SAR to answer the reviewer's follow-up,
+    # grounded in this SAR's narrative + cited evidence.
+    from app.agents.supervisor import get_gateway
+
+    prompt = (
+        f"You are the compliance investigator AI that produced the Suspicious Activity Report "
+        f"below for entity '{entity_name}'. A human MLRO reviewer is asking a follow-up question. "
+        f"Answer concisely and specifically, grounded ONLY in the SAR narrative and cited evidence. "
+        f"If the answer is not supported by the evidence, say so and state what additional check "
+        f"would be required.\n\n"
+        f"SAR NARRATIVE:\n{narrative}\n\n"
+        f"CITED EVIDENCE:\n{json.dumps(citations)[:2000]}\n\n"
+        f"REVIEWER QUESTION: {body.question}\n\n"
+        f'Respond as JSON: {{"answer": "<your answer>"}}'
+    )
+
+    try:
+        result = await get_gateway().complete(
+            prompt, schema=_InvestigatorAnswer, task_tag="investigator_qa"
+        )
+    except Exception:  # noqa: BLE001 — never fail the endpoint on an LLM error
+        result = None
+
+    if result is not None and result.ok and result.data:
+        answer = result.data.answer
+        degraded = False
+    else:
+        degraded = True
+        answer = (
+            "The investigator agent is temporarily unavailable (LLM degraded). "
+            f"From the SAR on record: {narrative[:400] or 'no narrative available.'}"
+        )
+
+    return success_response(
+        {"status": "answered", "question": body.question, "answer": answer, "degraded": degraded},
+        message="Investigator responded.",
+    )

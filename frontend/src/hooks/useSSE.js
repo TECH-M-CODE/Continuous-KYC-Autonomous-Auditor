@@ -18,8 +18,11 @@ export const useSSE = (url = '/api/v1/stream') => {
     sse.onopen = () => {
       setConnectionState((prev) => {
         if (prev === 'connecting' || prev === 'disconnected') {
-          // Reconnect happened, blanket invalidate to ensure fresh data
-          queryClient.invalidateQueries();
+          // Reconnect: refresh the live data views specifically. A blanket
+          // invalidateQueries() here refetches *everything* including the
+          // currently-mounted page, which caused a visible blank flash.
+          queryClient.invalidateQueries({ queryKey: ['alerts'] });
+          queryClient.invalidateQueries({ queryKey: ['sars'] });
         }
         return 'connected';
       });
@@ -72,6 +75,9 @@ export const useSSE = (url = '/api/v1/stream') => {
     sse.addEventListener('alert.updated', handleEvent('alert.updated'));
     sse.addEventListener('entity.updated', handleEvent('entity.updated'));
     sse.addEventListener('sar.ready', handleEvent('sar.ready'));
+    // Per-agent pipeline progress — purely informational (drives the live
+    // inject stepper); does not invalidate any query.
+    sse.addEventListener('pipeline.progress', handleEvent('pipeline.progress'));
 
     sse.onmessage = (e) => {
       if (e.data === 'ping' || e.data.includes('heartbeat')) return;

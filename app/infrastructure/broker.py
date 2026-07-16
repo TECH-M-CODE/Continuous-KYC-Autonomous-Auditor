@@ -41,9 +41,10 @@ SAR_READY: Final = "sar.ready"
 ENTITY_UPDATED: Final = "entity.updated"
 SYSTEM_HEALTH: Final = "system.health"
 POLICY_RELOADED: Final = "policy.reloaded"
+PIPELINE_PROGRESS: Final = "pipeline.progress"  # per-agent stage updates for the live UI
 
 TOPICS: Final[frozenset[str]] = frozenset(
-    {ALERT_NEW, ALERT_UPDATED, SAR_READY, ENTITY_UPDATED, SYSTEM_HEALTH, POLICY_RELOADED}
+    {ALERT_NEW, ALERT_UPDATED, SAR_READY, ENTITY_UPDATED, SYSTEM_HEALTH, POLICY_RELOADED, PIPELINE_PROGRESS}
 )
 
 DEFAULT_QUEUE_MAXSIZE: Final = 100
@@ -292,5 +293,6 @@ __all__ = [
     "ENTITY_UPDATED",
     "SYSTEM_HEALTH",
     "POLICY_RELOADED",
+    "PIPELINE_PROGRESS",
     "DEFAULT_QUEUE_MAXSIZE",
 ]

@@ -28,6 +28,55 @@
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 }
 
+/* ── Theme surfaces (referenced by Layout's chrome + glass-card) ───────────── */
+:root {
+  --app-bg: #080c14;
+  --app-surface: #0a0f1a;
+  --app-border: #1a2438;
+  --app-header-bg: rgba(10, 15, 26, 0.95);
+  --glass-from: rgba(15, 22, 35, 0.9);
+  --glass-to: rgba(21, 30, 46, 0.8);
+  --glass-border: rgba(30, 45, 69, 0.8);
+  --glass-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --scrollbar-thumb: #1e2d45;
+  --scrollbar-thumb-hover: #2a3f5f;
+}
+
+/* Light theme: invert the slate scale so every slate-* utility flips (Tailwind
+   v4 emits color utilities as var(--color-slate-*)), and remap app surfaces.
+   Inverting a working dark palette guarantees contrast — no white-on-white. */
+:root[data-theme="light"] {
+  --color-slate-50: #020617;
+  --color-slate-100: #0f172a;
+  --color-slate-200: #1e293b;
+  --color-slate-300: #334155;
+  --color-slate-400: #475569;
+  --color-slate-500: #64748b;
+  --color-slate-600: #7c8ba1;
+  --color-slate-700: #cbd5e1;
+  --color-slate-800: #e2e8f0;
+  --color-slate-900: #eef2f7;
+  --color-slate-950: #f8fafc;
+
+  --color-bg-dark: #eef2f7;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1f5f9;
+  --color-surface-hover: #e2e8f0;
+  --color-border: #d8e0ea;
+  --color-border-bright: #c2cede;
+
+  --app-bg: #eef2f7;
+  --app-surface: #ffffff;
+  --app-border: #d8e0ea;
+  --app-header-bg: rgba(255, 255, 255, 0.95);
+  --glass-from: rgba(255, 255, 255, 0.96);
+  --glass-to: rgba(248, 250, 252, 0.92);
+  --glass-border: rgba(203, 213, 225, 0.9);
+  --glass-shadow: 0 4px 20px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --scrollbar-thumb: #cbd5e1;
+  --scrollbar-thumb-hover: #94a3b8;
+}
+
 @layer base {
   body {
     @apply bg-bg-dark text-slate-200 antialiased;
@@ -46,21 +95,21 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #1e2d45;
+    background: var(--scrollbar-thumb);
     border-radius: 2px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #2a3f5f;
+    background: var(--scrollbar-thumb-hover);
   }
 }
 
 @layer utilities {
-  /* Glass morphism card */
+  /* Glass morphism card (theme-aware via CSS vars) */
   .glass-card {
-    background: linear-gradient(135deg, rgba(15, 22, 35, 0.9) 0%, rgba(21, 30, 46, 0.8) 100%);
+    background: linear-gradient(135deg, var(--glass-from) 0%, var(--glass-to) 100%);
     backdrop-filter: blur(12px);
-    border: 1px solid rgba(30, 45, 69, 0.8);
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
   }
 
   /* Glow effects */

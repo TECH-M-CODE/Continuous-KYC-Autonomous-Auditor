@@ -69,6 +69,8 @@ def seed():
             name = row.get("entity_name")
             country = row.get("country")
             sector = row.get("industry")
+            # CSV uses "Person" / "Organization"; keep as-is (API normalizes for display).
+            entity_type = (row.get("entity_type") or "Organization").strip() or "Organization"
             
             # Use dynamic risk provided by the dataset generation initially, 
             # the pipeline will update this dynamically later.
@@ -93,6 +95,7 @@ def seed():
             entity = Entity(
                 id=client_id,
                 name=name,
+                entity_type=entity_type,
                 jurisdiction=country,
                 sector=sector,
                 risk_score=base_score,

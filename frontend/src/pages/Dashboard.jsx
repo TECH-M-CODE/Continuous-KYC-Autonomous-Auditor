@@ -31,7 +31,7 @@ const RISK_BANDS = [
 const StatCard = ({ title, value, icon: Icon, gradient, sub, delay = 0 }) => (
   <div
     className="relative overflow-hidden rounded-2xl border p-5 flex flex-col gap-3 animate-slide-up glass-card"
-    style={{ animationDelay: `${delay}ms`, borderColor: '#1e2d45' }}
+    style={{ animationDelay: `${delay}ms`, borderColor: 'var(--app-border)' }}
   >
     <div className="flex items-start justify-between">
       <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{title}</p>

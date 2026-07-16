@@ -8,6 +8,7 @@ class Entity(Base):
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(255), nullable=False, index=True)
+    entity_type = Column(String(50), default="Organization")  # "Person" | "Organization"
     registration_number = Column(String(100), nullable=True)
     jurisdiction = Column(String(100), nullable=True)
     sector = Column(String(100), nullable=True)
