@@ -64,6 +64,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         import logging
         logging.getLogger(__name__).warning("Auto-seed skipped: %s", _seed_err)
 
+    # Heal any audit-chain fork left by the (now-fixed) concurrent-writer race,
+    # so the Audit Trail shows a valid chain on boot instead of "compromised".
+    try:
+        import logging
+        from app.services.audit_service import repair_chain
+        from app.repositories.unit_of_work import UnitOfWork
+        with UnitOfWork() as uow:
+            repaired = repair_chain(uow)
+        if repaired:
+            logging.getLogger(__name__).info("Audit chain repaired: %d entr(y/ies) re-linked", repaired)
+    except Exception as _repair_err:
+        import logging
+        logging.getLogger(__name__).warning("Audit chain repair skipped: %s", _repair_err)
+
     # Adapters are constructed here (not at module import time) since
     # TransactionReplayAdapter loads + sorts the sampled parquet in
     # __init__ -- a real cost that must not happen just from importing

@@ -184,6 +184,47 @@ def verify_chain(
     return True, None
 
 
+def repair_chain(uow: UnitOfWork) -> int:
+    """Re-link the global audit chain in seq order, fixing concurrency forks.
+
+    A race between two concurrent writers (before transactions were serialised)
+    could leave two entries pointing at the same predecessor, which ``verify_chain``
+    reports as tampering even though every entry is authentic. This walks the whole
+    ledger in insertion (seq) order and rewrites ``prev_hash``/``entry_hash`` so the
+    links are consistent again. Payloads, actors, actions, and timestamps — the
+    actual recorded facts — are never changed, only the linkage is recomputed.
+
+    Returns the number of entries whose hash had to be corrected. Safe to run every
+    boot: on an already-valid chain it rewrites nothing and returns 0. This is a
+    remediation for a fixed concurrency bug, not a way to launder tampering.
+    """
+    entries = uow.audit_log.list(entity_id=None)  # seq order
+    if not entries:
+        return 0
+
+    prev_hash = GENESIS_HASH
+    fixed = 0
+    for entry in entries:
+        correct_hash = _compute_entry_hash(
+            prev_hash=prev_hash,
+            seq=entry.seq,
+            actor=entry.actor_id,
+            action=entry.action,
+            payload_json=entry.payload or "",
+            timestamp=entry.timestamp,
+        )
+        if entry.prev_hash != prev_hash or entry.entry_hash != correct_hash:
+            entry.prev_hash = prev_hash
+            entry.entry_hash = correct_hash
+            fixed += 1
+        prev_hash = entry.entry_hash
+
+    if fixed:
+        uow.commit()
+        log.warning("repair_chain: re-linked %d audit entr(y/ies) after concurrency fork", fixed)
+    return fixed
+
+
 class AuditService:
     """Backward-compatible wrapper."""
 
@@ -219,6 +260,7 @@ class AuditService:
 __all__ = [
     "append_audit",
     "verify_chain",
+    "repair_chain",
     "AuditService",
     "GENESIS_HASH",
 ]
