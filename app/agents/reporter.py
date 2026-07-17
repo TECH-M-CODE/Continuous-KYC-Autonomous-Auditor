@@ -62,6 +62,70 @@ class SARNarrativeResult(BaseModel):
 
 # ── Node ────────────────────────────────────────────────────────────────────
 
+def _log_only_low(state: AuditorState, entity_id: str, entity_name: str, tb) -> AuditorState:
+    """Persist a LOW-severity event as a monitored risk record — no alert, no SAR.
+
+    The risk event + entity score were already written by the investigator. Here we
+    add one audit entry, mark the raw event processed, and publish an entity update
+    so the timeline/score refresh live. Nothing lands in the alert queue.
+    """
+    tb.add(
+        kind="decision",
+        label="Logged for monitoring (LOW)",
+        detail="Low-severity event recorded on the entity timeline; no alert or SAR raised.",
+        values={
+            "risk_band": "LOW",
+            "new_risk_score": state.get("new_risk_score"),
+            "score_delta": state.get("score_delta"),
+        },
+        outcome="branch",
+    )
+
+    try:
+        with UnitOfWork() as uow:
+            append_audit(
+                action="ENTITY_RISK_UPDATED",
+                payload={
+                    "score_delta": state.get("score_delta", 0),
+                    "new_score": state.get("new_risk_score", 0),
+                    "risk_band": "LOW",
+                    "event_id": state.get("event_id"),
+                    "disposition": "monitored_no_alert",
+                },
+                uow=uow,
+                entity_id=entity_id,
+            )
+            raw_ev = uow.events.get(state.get("event_id", ""))
+            if raw_ev:
+                raw_ev.processed = True
+                raw_ev.status = "PROCESSED"
+            uow.commit()
+    except Exception as exc:  # noqa: BLE001
+        log.error("reporter(log-only): DB write failed for entity=%s: %s", entity_id, exc)
+        state["error"] = f"DB write failed: {exc}"
+        state["trace"] = tb
+        return state
+
+    # Refresh the timeline/score, but no alert.new / sar.ready.
+    try:
+        broker.publish(ENTITY_UPDATED, {
+            "entity_id": entity_id,
+            "entity_name": entity_name,
+            "new_risk_score": state.get("new_risk_score"),
+            "risk_band": "LOW",
+            "score_delta": state.get("score_delta"),
+        })
+    except Exception as exc:  # noqa: BLE001
+        log.warning("reporter(log-only): broker publish failed (non-fatal): %s", exc)
+
+    state["alert_id"] = None
+    state["sar_id"] = None
+    state["final_outcome"] = "monitored"
+    state["trace"] = tb
+    log.info("reporter: entity=%s LOW → logged for monitoring (no alert/SAR)", entity_name)
+    return state
+
+
 def reporter(state: AuditorState, *, gateway) -> AuditorState:
     """Reporter node. ``gateway`` is injected by supervisor."""
     entity_id = state.get("entity_id", "")
@@ -70,6 +134,15 @@ def reporter(state: AuditorState, *, gateway) -> AuditorState:
     log.info("reporter: entity=%s band=%s", entity_name, risk_band)
 
     tb = state["trace"]
+
+    # ── LOW severity → log only, no alert / no SAR ────────────────────────────
+    # Routine low-severity events shouldn't clutter the analyst queue or generate
+    # regulatory SAR drafts. The investigator has already recorded the risk event
+    # (so it still shows on the entity timeline and updates the cumulative score);
+    # here we just log it and skip alert/SAR creation — and the SAR-narrative LLM
+    # call, so a benign event is also fast.
+    if risk_band.upper() == "LOW":
+        return _log_only_low(state, entity_id, entity_name, tb)
 
     # ── LLM call: SAR narrative ───────────────────────────────────────────────
     prompt = build_reporter_prompt(
@@ -131,13 +204,35 @@ def reporter(state: AuditorState, *, gateway) -> AuditorState:
         outcome="pass",
     )
 
+    # Counterfactual grounded in the actual event-based scoring (not the old
+    # fixed-threshold model). Explains why THIS event produced THIS alert, handles
+    # the case where the entity was already at/above this level (delta 0), and is
+    # band-aware so a LOW event doesn't claim something "below the LOW threshold".
+    _new_score = state.get("new_risk_score", 0.0) or 0.0
+    _delta = state.get("score_delta", 0.0) or 0.0
+    _etype = (state.get("event_type", "unknown") or "unknown").replace("_", " ")
+    _band = risk_band.upper()
+
+    if _delta > 0:
+        _score_line = f"raising the entity's cumulative risk score to {_new_score:.0f} (+{_delta:.0f})"
+    else:
+        _score_line = f"the entity's cumulative risk was already {_new_score:.0f}, so it is unchanged"
+
+    if _band == "LOW":
+        _tail = "As a low-severity signal it is logged for continuous monitoring rather than escalated for review."
+    else:
+        _tail = (
+            f"Had this been a lower-severity signal (e.g. a routine mention with no adverse indicators), "
+            f"it would have scored below the {_band} band and would not have raised a {priority} alert."
+        )
+
+    counterfactual = (
+        f"This {_etype} event was assessed as {_band} severity; {_score_line}. {_tail}"
+    )
+
     decision_trace = tb.finalize(
         final_outcome=final_outcome,
-        counterfactual=(
-            f"Had the entity's risk score been below 40, the event would have been dismissed. "
-            f"The {state.get('event_type', 'unknown')} event added "
-            f"{state.get('score_delta', 0):.2f} points."
-        ),
+        counterfactual=counterfactual,
     )
 
     trace_json = decision_trace.model_dump_json()

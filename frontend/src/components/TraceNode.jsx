@@ -1,6 +1,6 @@
 import React from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { FileText, ShieldAlert, Activity, CheckCircle, XCircle, ArrowRightLeft } from 'lucide-react';
+import { FileText, ShieldAlert, Activity, CheckCircle, XCircle, ArrowRightLeft, Fingerprint, Tags } from 'lucide-react';
 
 const BaseNode = ({ data, selected, icon: Icon, colorClass, borderClass, bgClass, iconBgClass, targetPosition = Position.Left, sourcePosition = Position.Right }) => (
   <div className={`px-5 py-4 rounded-2xl border shadow-2xl w-72 backdrop-blur-md transition-all duration-300 ${selected ? 'ring-2 ring-brand-400 scale-105 z-10' : 'hover:scale-105 z-0'} ${bgClass} ${borderClass}`}>
@@ -30,13 +30,35 @@ export const EventNode = (props) => (
 );
 
 export const ScreenNode = (props) => (
-  <BaseNode 
-    {...props} 
-    icon={ShieldAlert} 
-    colorClass="text-purple-400" 
-    borderClass="border-purple-500/30" 
-    bgClass="bg-slate-900/80" 
+  <BaseNode
+    {...props}
+    icon={ShieldAlert}
+    colorClass="text-purple-400"
+    borderClass="border-purple-500/30"
+    bgClass="bg-slate-900/80"
     iconBgClass="bg-purple-500/20"
+  />
+);
+
+export const ResolveNode = (props) => (
+  <BaseNode
+    {...props}
+    icon={Fingerprint}
+    colorClass="text-indigo-400"
+    borderClass="border-indigo-500/30"
+    bgClass="bg-slate-900/80"
+    iconBgClass="bg-indigo-500/20"
+  />
+);
+
+export const ClassifyNode = (props) => (
+  <BaseNode
+    {...props}
+    icon={Tags}
+    colorClass="text-amber-400"
+    borderClass="border-amber-500/30"
+    bgClass="bg-slate-900/80"
+    iconBgClass="bg-amber-500/20"
   />
 );
 

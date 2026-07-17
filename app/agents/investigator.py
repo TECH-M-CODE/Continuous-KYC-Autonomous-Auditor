@@ -11,11 +11,12 @@ Responsibilities
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pydantic import BaseModel
 
 from app.agents.state import AuditorState
-from app.agents.prompts.investigator_prompts import KNOWN_EVENT_TYPES
+from app.agents.prompts.investigator_prompts import build_investigator_prompt, KNOWN_EVENT_TYPES
 from app.repositories.unit_of_work import UnitOfWork
 from app.services.scoring.policy import get_policy
 
@@ -43,16 +44,18 @@ def investigator(state: AuditorState, *, gateway) -> AuditorState:
 
     tb = state["trace"]
 
-    # ── Deterministic classification (no LLM on the hot path) ───────────────
-    # event_type comes from the ingested signal itself (the inject form / adapter
-    # already set it), and severity is derived from the enrichment hit counts.
-    # This removes an LLM round-trip from every event; the SAR narrative in the
-    # reporter node remains the single LLM-authored artifact. The old LLM
-    # classify call added ~15-20s per event and degraded frequently.
+    # ── Classification: LLM-driven, with a deterministic fallback ────────────
+    # Hybrid design: the model classifies the event (type + severity + a one-line
+    # rationale) so the Decision Trace's "classify" node reflects real LLM
+    # reasoning. If the gateway degrades (timeout / rate limit / schema miss) we
+    # fall back to deterministic values derived from the ingested signal + news
+    # enrichment, so the pipeline never stalls. (The resolver LLM stays skipped
+    # when there is no watchlist candidate — see resolver.py.)
     event_raw = state.get("event_raw", {})
     news_ctx = state.get("news_context") or {}
     structured = news_ctx.get("structured_data") or {}
 
+    # --- deterministic baseline (also the fallback if the LLM degrades) -------
     event_type = event_raw.get("event_type", _DEFAULT_EVENT_TYPE)
     if event_type not in KNOWN_EVENT_TYPES:
         event_type = _DEFAULT_EVENT_TYPE
@@ -75,6 +78,32 @@ def investigator(state: AuditorState, *, gateway) -> AuditorState:
         f"{event_type.replace('_', ' ')}."
     )
 
+    # --- LLM classification (overrides the baseline when it succeeds) ---------
+    prompt = build_investigator_prompt(
+        entity_name=entity_name,
+        event_type_hint=event_raw.get("event_type", "unknown"),
+        event_text=event_raw.get("text", ""),
+        event_source=event_raw.get("source", "unknown"),
+        screening_matches=state.get("screening_matches", []),
+    )
+    # Runs inside asyncio.to_thread's worker thread (no running loop), so
+    # asyncio.run() creates a fresh loop for this bounded call.
+    result = asyncio.run(
+        gateway.complete(prompt, schema=ClassifyEventResult, task_tag="classify_event")
+    )
+
+    llm_ok = bool(result.ok and result.data)
+    if llm_ok:
+        classify: ClassifyEventResult = result.data
+        if classify.event_type in KNOWN_EVENT_TYPES:
+            event_type = classify.event_type
+        severity = max(0.0, min(1.0, classify.severity))
+        if classify.evidence_summary:
+            evidence_summary = classify.evidence_summary
+        log.info("investigator: LLM classified %s (severity %.2f) via %s", event_type, severity, result.model_used)
+    else:
+        log.warning("investigator: LLM classify degraded — using deterministic fallback")
+
     tb.add(
         kind="classify",
         label=f"Classified: {event_type} (severity {severity:.2f})",
@@ -82,8 +111,10 @@ def investigator(state: AuditorState, *, gateway) -> AuditorState:
         values={
             "event_type": event_type,
             "severity": severity,
-            "llm_ok": False,
-            "deterministic": True,
+            "llm_ok": llm_ok,
+            "llm_model": result.model_used if llm_ok else None,
+            "llm_degraded": result.degraded,
+            "source": "llm" if llm_ok else "deterministic_fallback",
         },
         outcome="pass",
     )

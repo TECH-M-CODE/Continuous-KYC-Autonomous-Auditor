@@ -11,12 +11,14 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
-import { EventNode, ScreenNode, VerifyNode, ScoreNode, PropagateNode, DecisionNode } from './TraceNode';
+import { EventNode, ScreenNode, ResolveNode, ClassifyNode, VerifyNode, ScoreNode, PropagateNode, DecisionNode } from './TraceNode';
 import { Info } from 'lucide-react';
 
 const nodeTypes = {
   event: EventNode,
   screen: ScreenNode,
+  resolve: ResolveNode,     // entity resolution + LLM verdict
+  classify: ClassifyNode,   // event classification
   verify: VerifyNode,
   score: ScoreNode,
   propagate: PropagateNode,
@@ -128,6 +130,8 @@ export const DecisionGraph = ({ trace }) => {
             nodeColor={(n) => {
               if (n.type === 'event') return '#3b82f6';
               if (n.type === 'screen') return '#a855f7';
+              if (n.type === 'resolve') return '#6366f1';
+              if (n.type === 'classify') return '#f59e0b';
               if (n.type === 'verify') return '#10b981';
               if (n.type === 'score') return '#f97316';
               if (n.type === 'propagate') return '#06b6d4';

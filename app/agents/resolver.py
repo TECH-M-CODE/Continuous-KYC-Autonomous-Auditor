@@ -120,11 +120,28 @@ def resolver(state: AuditorState, *, gateway) -> AuditorState:
         degraded=llm_degraded,
     )
 
+    # The verification confidence is specifically about *watchlist* corroboration.
+    # Since a resolved entity is always investigated regardless (the band no longer
+    # terminates the pipeline), labelling a no-match as "confidence 0.00 -> dismiss"
+    # is misleading — it reads as if the event was dropped when it wasn't. Frame it
+    # as what it actually is: a watchlist signal that feeds into scoring.
+    has_watchlist_match = bool(state.get("screening_matches"))
+    if has_watchlist_match:
+        verify_label = verification.trace_label()
+        verify_detail = verification.trace_detail()
+    else:
+        verify_label = "Watchlist check: no sanctions/PEP match"
+        verify_detail = (
+            "No watchlist corroboration for this entity. Watchlist screening is only "
+            "one input — the event still proceeds to risk scoring, where its own "
+            "severity (adverse-media / transaction typology) drives the outcome."
+        )
+
     tb.add(
         kind="verify",
-        label=verification.trace_label(),
-        detail=verification.trace_detail(),
-        values=verification.trace_values(),
+        label=verify_label,
+        detail=verify_detail,
+        values={**verification.trace_values(), "has_watchlist_match": has_watchlist_match},
         outcome="pass" if verification.band == "proceed" else "branch",
     )
 
